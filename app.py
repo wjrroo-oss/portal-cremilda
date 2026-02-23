@@ -7,7 +7,7 @@ import gspread
 
 # IDs QUE VOCÊ PASSOU
 ID_PASTA_2026 = "1R820oGrk43IDYS3GjE7K4Qe9Zs03Vq6A"
-ID_PLANILHA_MASTER = "1g4Czl95Wfp3gw8moJ1GnPqd73XqhGxjJvj1vDc34fvY"
+ID_PLANILHA_MASTER = "1D1o5_DAN8A3wDIPd_ffPjIMFDr4q3o71"
 
 # Configuração da Página
 st.set_page_config(page_title="Portal Cremilda", page_icon="🏫")
