@@ -6,7 +6,7 @@ from googleapiclient.discovery import build
 import gspread
 
 # IDs QUE VOCÊ PASSOU
-ID_PASTA_2026 = "1pS6psPfZk1QigEjYLd19O7-i6JfPMbw5"
+ID_PASTA_2026 = "1R820oGrk43IDYS3GjE7K4Qe9Zs03Vq6A"
 ID_PLANILHA_MASTER = "1g4Czl95Wfp3gw8moJ1GnPqd73XqhGxjJvj1vDc34fvY"
 
 # Configuração da Página
