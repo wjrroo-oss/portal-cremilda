@@ -2,18 +2,15 @@ import streamlit as st
 import pdfplumber
 import pandas as pd
 from google.oauth2 import service_account
-from googleapiclient.discovery import build
 import gspread
 
-# IDs QUE VOCÊ PASSOU
-ID_PASTA_2026 = "1R820oGrk43IDYS3GjE7K4Qe9Zs03Vq6A"
-ID_PLANILHA_MASTER = "1D1o5_DAN8A3wDIPd_ffPjIMFDr4q3o71"
+# --- COLE AQUI O ID DA SUA PLANILHA ---
+ID_PLANILHA_MASTER = "SEU_ID_DA_PLANILHA_AQUI" 
 
-# Configuração da Página
 st.set_page_config(page_title="Portal Cremilda", page_icon="🏫")
 st.title("🏫 Portal de Horários - Escola Cremilda")
 
-# --- FUNÇÃO DE EXTRAÇÃO (O Motor) ---
+# --- FUNÇÃO DE EXTRAÇÃO ---
 def extrair_dados(pdf_file, turno):
     dados_extraidos = []
     with pdfplumber.open(pdf_file) as pdf:
@@ -22,46 +19,49 @@ def extrair_dados(pdf_file, turno):
             if text:
                 linhas = text.split('\n')
                 for linha in linhas:
-                    # Lógica simplificada para encontrar Turma e Professor
+                    # Filtro básico (será refinado depois com base no PDF real)
                     if "Aula" in linha or "º" in linha:
-                        dados_extraidos.append([turno, linha]) # Exemplo simplificado
+                        dados_extraidos.append([turno, linha, "", "", "", "", ""])
     return dados_extraidos
 
 # --- INTERFACE ---
-nome_versao = st.text_input("Nome da Nova Versão", placeholder="Ex: Horario_Oficial_Marco")
-pdf_mat = st.file_uploader("PDF Matutino Geral", type="pdf")
-pdf_vesp = st.file_uploader("PDF Vespertino Geral", type="pdf")
+st.write("Faça o upload dos PDFs gerados pelo Urânia para atualizar a base de dados.")
+pdf_mat = st.file_uploader("PDF Matutino", type="pdf")
+pdf_vesp = st.file_uploader("PDF Vespertino", type="pdf")
 
-if st.button("🚀 GERAR E ARQUIVAR NO DRIVE"):
-    if not nome_versao or not pdf_mat or not pdf_vesp:
-        st.error("Preencha todos os campos!")
+if st.button("🚀 ATUALIZAR BASE DE DADOS"):
+    if not pdf_mat or not pdf_vesp:
+        st.error("Por favor, insira os dois PDFs.")
     else:
-        try:
-            with st.spinner("Conectando ao Google Drive..."):
-                # Carregar credenciais dos Secrets
+        with st.spinner("O robô está digitando os dados na planilha..."):
+            try:
+                # 1. Conectar ao Google
                 creds_dict = st.secrets["google_credentials"]
-                creds = service_account.Credentials.from_service_account_info(creds_dict)
+                creds = service_account.Credentials.from_service_account_info(
+                    creds_dict, 
+                    scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+                )
+                client = gspread.authorize(creds)
                 
-                service_drive = build('drive', 'v3', credentials=creds)
-                client_sheets = gspread.authorize(creds)
-
-                # 1. Criar Pasta da Versão
-                folder_metadata = {
-                    'name': nome_versao,
-                    'mimeType': 'application/vnd.google-apps.folder',
-                    'parents': [ID_PASTA_2026]
-                }
-                nova_pasta = service_drive.files().create(body=folder_metadata, fields='id').execute()
-                id_nova_pasta = nova_pasta.get('id')
-
-                # 2. Clonar Planilha Master para a nova pasta
-                copy_metadata = {
-                    'name': f"Planilha_{nome_versao}",
-                    'parents': [id_nova_pasta]
-                }
-                copia = service_drive.files().copy(fileId=ID_PLANILHA_MASTER, body=copy_metadata).execute()
+                # 2. Abrir a Planilha e a Aba certa
+                planilha = client.open_by_key(ID_PLANILHA_MASTER)
+                aba_bruta = planilha.worksheet("BASE_DADOS_BRUTA")
                 
-                st.success(f"✅ Versão {nome_versao} criada com sucesso na pasta 2026!")
+                # 3. Ler PDFs
+                dados_m = extrair_dados(pdf_mat, "MATUTINO")
+                dados_v = extrair_dados(pdf_vesp, "VESPERTINO")
+                todos_dados = dados_m + dados_v
+                
+                # 4. Limpar aba antiga e colocar dados novos
+                aba_bruta.clear()
+                # Recriar o cabeçalho
+                aba_bruta.append_row(["Turno", "Professor", "Dia", "Horário", "Turma", "Disciplina", "Sala"])
+                
+                # Injetar as linhas
+                if todos_dados:
+                    aba_bruta.append_rows(todos_dados)
+                
+                st.success("✅ Base de dados atualizada! Pode abrir a sua planilha e gerar a grade.")
                 st.balloons()
-        except Exception as e:
-            st.error(f"Erro técnico: {e}")
+            except Exception as e:
+                st.error(f"Erro ao escrever na planilha: {e}")
