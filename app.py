@@ -5,7 +5,7 @@ from google.oauth2 import service_account
 import gspread
 
 # --- COLE AQUI O ID DA SUA PLANILHA ---
-ID_PLANILHA_MASTER = "1D1o5_DAN8A3wDIPd_ffPjIMFDr4q3o71" 
+ID_PLANILHA_MASTER = "1XtIoPk-BL7egviMXJy-qrb0NB--EM7X-l-emusS1f24" 
 
 st.set_page_config(page_title="Portal Cremilda", page_icon="🏫")
 st.title("🏫 Portal de Horários - Escola Cremilda")
