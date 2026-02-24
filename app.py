@@ -4,46 +4,32 @@ import pandas as pd
 from google.oauth2 import service_account
 import gspread
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
-# --- CONFIGURAÇÃO DA PLANILHA ---
+# --- CONFIGURAÇÃO ---
 ID_PLANILHA_MASTER = "1XtIoPk-BL7egviMXJy-qrb0NB--EM7X-l-emusS1f24" 
 
-# --- INJEÇÃO DE CSS MODERNO (DESIGN JAMSTACK) ---
 st.set_page_config(page_title="Portal Cremilda", page_icon="🏫", layout="centered")
 st.markdown("""
     <style>
         .stApp { background-color: #f8fafc; font-family: 'Inter', sans-serif; }
         h1 { color: #1e293b; font-weight: 800; text-align: center; }
-        .stButton>button { background-color: #2563eb; color: white; border-radius: 8px; font-weight: 600; width: 100%; padding: 0.75rem; border: none; transition: all 0.3s ease; }
-        .stButton>button:hover { background-color: #1d4ed8; transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-        div[data-baseweb="fileUploader"] { background-color: white; border-radius: 12px; border: 2px dashed #cbd5e1; padding: 1rem; }
-        .stTextInput>div>div>input { border-radius: 8px; border: 1px solid #cbd5e1; }
+        .stButton>button { background-color: #2563eb; color: white; border-radius: 8px; font-weight: 600; width: 100%; padding: 0.75rem; border: none; }
+        .stButton>button:hover { background-color: #1d4ed8; transform: translateY(-2px); }
+        .date-box { background-color: #e2e8f0; padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 5px solid #2563eb; }
+        .info-criacao { font-size: 0.85rem; color: #475569; margin-bottom: 10px; font-weight: 600; }
     </style>
 """, unsafe_allow_html=True)
 
 st.title("🏫 Portal de Alocação - Cremilda")
-st.markdown("<p style='text-align: center; color: #64748b; margin-bottom: 2rem;'>Módulo de Extração Urânia e Arquivamento de Base</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #64748b;'>Módulo de Extração, Vigência e Histórico</p>", unsafe_allow_html=True)
 
-# --- DICIONÁRIO DE SALAS E PAVILHÕES (BASEADO NOS SEUS PRINTS) ---
 def mapear_sala_pavilhao(turma, turno):
     t = turma.upper().replace(" ", "").replace("º", "").replace("°", "").replace("ANO", "")
     if turno == "MATUTINO":
-        mapa = {
-            '6A': ('13', 'P1E2'), '6B': ('14', 'P1E2'), '7A': ('15', 'P1E2'), '7B': ('16', 'P1E2'),
-            '8A': ('17', 'P1E2'), '8B': ('18', 'P1E2'), '9A': ('19', 'P1E2'), '9B': ('06', 'P1E2'),
-            '1A': ('01', 'P1E2'), '1B': ('20', 'P1E2'), '1C': ('04', 'P1E2'), '1D': ('05', 'P1E2'),
-            '2A': ('21', 'P1E2'), '2B': ('22', 'P1E2'), '2C': ('23', 'P1E2'), '2D': ('24', 'P1E2'),
-            '3A': ('08', 'P1E2'), '3B': ('09', 'P1E2'), '3C': ('10', 'P1E2'), '3D': ('11', 'P1E2'), '3E': ('12', 'P1E2')
-        }
+        mapa = {'6A': ('13', 'P1E2'), '6B': ('14', 'P1E2'), '7A': ('15', 'P1E2'), '7B': ('16', 'P1E2'), '8A': ('17', 'P1E2'), '8B': ('18', 'P1E2'), '9A': ('19', 'P1E2'), '9B': ('06', 'P1E2'), '1A': ('01', 'P1E2'), '1B': ('20', 'P1E2'), '1C': ('04', 'P1E2'), '1D': ('05', 'P1E2'), '2A': ('21', 'P1E2'), '2B': ('22', 'P1E2'), '2C': ('23', 'P1E2'), '2D': ('24', 'P1E2'), '3A': ('08', 'P1E2'), '3B': ('09', 'P1E2'), '3C': ('10', 'P1E2'), '3D': ('11', 'P1E2'), '3E': ('12', 'P1E2')}
     else:
-        mapa = {
-            '6C': ('13', 'P2'), '6D': ('14', 'P2'), '6E': ('15', 'P2'), '6F': ('16', 'P2'), '6G': ('17', 'P2'),
-            '7C': ('19', 'P2'), '7D': ('18', 'P2'), '7E': ('20', 'P2'), '7F': ('21', 'P2'),
-            '8C': ('01', 'P2'), '8D': ('04', 'P2'), '8E': ('22', 'P2'), '8F': ('23', 'P2'), '8G': ('24', 'P2'),
-            '9C': ('05', 'P1'), '9D': ('08', 'P1'), '9E': ('09', 'P1'), '9F': ('06', 'P1'),
-            '1E': ('10', 'P1'), '1F': ('11', 'P1'), '2E': ('12', 'P1')
-        }
+        mapa = {'6C': ('13', 'P2'), '6D': ('14', 'P2'), '6E': ('15', 'P2'), '6F': ('16', 'P2'), '6G': ('17', 'P2'), '7C': ('19', 'P2'), '7D': ('18', 'P2'), '7E': ('20', 'P2'), '7F': ('21', 'P2'), '8C': ('01', 'P2'), '8D': ('04', 'P2'), '8E': ('22', 'P2'), '8F': ('23', 'P2'), '8G': ('24', 'P2'), '9C': ('05', 'P1'), '9D': ('08', 'P1'), '9E': ('09', 'P1'), '9F': ('06', 'P1'), '1E': ('10', 'P1'), '1F': ('11', 'P1'), '2E': ('12', 'P1')}
     return mapa.get(t, ('00', 'P?'))
 
 def extrair_dados_urania(pdf_file, turno):
@@ -56,8 +42,7 @@ def extrair_dados_urania(pdf_file, turno):
             turmas = []
             if len(tables[0]) > 0:
                 for cell in tables[0][0]:
-                    if cell and "ANO" in str(cell).upper():
-                        turmas.append(str(cell).replace('\n', ' ').strip().upper())
+                    if cell and "ANO" in str(cell).upper(): turmas.append(str(cell).replace('\n', ' ').strip().upper())
             if not turmas:
                 texto = page.extract_text()
                 encontradas = re.findall(r'\d[°º]\s*(?:ANO|ano)\s*[A-Z]?', texto, re.IGNORECASE)
@@ -87,43 +72,85 @@ def extrair_dados_urania(pdf_file, turno):
                     aula_num += 1
     return dados
 
-# --- INTERFACE E LÓGICA DE ARQUIVAMENTO ---
-data_vigencia = st.text_input("📅 Início da Vigência deste Horário", placeholder="Ex: 09/03 a 13/03")
+# O NOVO CÁLCULO DE DATAS
+def calcular_datas_inteligentes(nome_arquivo):
+    match = re.search(r'(\d{2})\s+(\d{2})', nome_arquivo)
+    if match:
+        ano_atual = datetime.now().year
+        data_criacao_str = f"{match.group(1)}/{match.group(2)}/{ano_atual}"
+        try:
+            data_criacao = datetime.strptime(data_criacao_str, "%d/%m/%Y")
+            
+            # Calcula quantos dias faltam para a próxima Segunda-feira (0)
+            dias_para_segunda = (0 - data_criacao.weekday()) % 7
+            if dias_para_segunda == 0: dias_para_segunda = 7 # Se gerou numa segunda, projeta pra próxima
+            
+            data_nova_vigencia = data_criacao + timedelta(days=dias_para_segunda)
+            data_fim_velha = data_nova_vigencia - timedelta(days=3) # Sexta anterior
+            
+            return data_criacao_str, data_nova_vigencia.strftime("%d/%m/%Y"), data_fim_velha.strftime("%d/%m/%Y")
+        except: pass
+    return "Não identificada", "", ""
+
 col1, col2 = st.columns(2)
 with col1: pdf_mat = st.file_uploader("PDF Matutino GERAL", type="pdf")
 with col2: pdf_vesp = st.file_uploader("PDF Vespertino GERAL", type="pdf")
 
-if st.button("🚀 INICIAR NOVA VIGÊNCIA E ATUALIZAR BASE"):
-    if not data_vigencia or not pdf_mat or not pdf_vesp:
-        st.warning("⚠️ Preencha a data de vigência e anexe os dois PDFs.")
+data_criacao = "Aguardando PDF..."
+data_sugerida_nova = ""
+data_sugerida_velha = ""
+
+if pdf_mat: 
+    data_criacao, data_sugerida_nova, data_sugerida_velha = calcular_datas_inteligentes(pdf_mat.name)
+
+st.markdown("<div class='date-box'>", unsafe_allow_html=True)
+st.markdown("### 📅 Validação de Vigência")
+st.markdown(f"<div class='info-criacao'>🕒 Data de criação identificada no Urânia: {data_criacao}</div>", unsafe_allow_html=True)
+
+col_dt1, col_dt2 = st.columns(2)
+with col_dt1:
+    data_fim_velha = st.text_input("Encerramento do Horário Atual (Sexta-feira):", value=data_sugerida_velha, placeholder="Ex: 30/01/2026")
+with col_dt2:
+    data_inicio_nova = st.text_input("Início da Nova Vigência (Segunda-feira):", value=data_sugerida_nova, placeholder="Ex: 02/02/2026")
+st.markdown("</div>", unsafe_allow_html=True)
+
+if st.button("🚀 ARQUIVAR ANTIGO E ATIVAR NOVO HORÁRIO"):
+    if not data_inicio_nova or not pdf_mat or not pdf_vesp:
+        st.warning("⚠️ Preencha as datas e anexe os dois PDFs.")
     else:
-        with st.spinner("Arquivando base antiga e gerando nova..."):
+        with st.spinner("Arquivando histórico e gerando nova base oficial..."):
             try:
                 creds_dict = st.secrets["google_credentials"]
                 creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
                 client = gspread.authorize(creds)
                 planilha = client.open_by_key(ID_PLANILHA_MASTER)
+                
                 aba_bruta = planilha.worksheet("BASE_DADOS_BRUTA")
-                
-                # 1. MECANISMO DE SEGURANÇA E ARQUIVAMENTO
                 dados_antigos = aba_bruta.get_all_values()
-                if len(dados_antigos) > 1:
-                    data_hoje = datetime.now().strftime("%d-%m-%Y_%H-%M")
-                    nome_aba_bkp = f"BKP_Vigencia_Anterior_{data_hoje}"
-                    aba_bkp = planilha.add_worksheet(title=nome_aba_bkp, rows=len(dados_antigos)+10, cols=10)
-                    aba_bkp.update(range_name='A1', values=dados_antigos)
                 
-                # 2. EXTRAÇÃO E PREENCHIMENTO NOVO
+                if len(dados_antigos) > 1:
+                    inicio_antigo = dados_antigos[0][8] if len(dados_antigos[0]) > 8 else "Desconhecido"
+                    nome_historico = f"HISTORICO_{inicio_antigo.replace('/','-')}_a_{data_fim_velha.replace('/','-')}"
+                    dados_antigos[0][9] = data_fim_velha
+                    aba_bruta.update_title(nome_historico)
+                    aba_bruta.update(range_name='A1', values=dados_antigos)
+                else:
+                    aba_bruta.update_title("BKP_VAZIO")
+
+                nova_aba_bruta = planilha.add_worksheet(title="BASE_DADOS_BRUTA", rows=1000, cols=15)
+                
                 dados_m = extrair_dados_urania(pdf_mat, "MATUTINO")
                 dados_v = extrair_dados_urania(pdf_vesp, "VESPERTINO")
                 todos_dados = dados_m + dados_v
                 
-                aba_bruta.clear()
-                aba_bruta.append_row(["Turno", "Professor", "Dia", "Horário", "Turma", "Disciplina", "Sala", "Pavilhao", f"Vigência: {data_vigencia}"])
-                if todos_dados:
-                    aba_bruta.append_rows(todos_dados)
+                cabecalho = ["Turno", "Professor", "Dia", "Horário", "Turma", "Disciplina", "Sala", "Pavilhao", data_inicio_nova, "Em Aberto"]
+                nova_aba_bruta.append_row(cabecalho)
+                if todos_dados: nova_aba_bruta.append_rows(todos_dados)
                 
-                st.success(f"✅ Sucesso! A base antiga foi salva na aba oculta e a vigência '{data_vigencia}' já está ativa!")
+                try: planilha.del_worksheet(planilha.worksheet("BKP_VAZIO"))
+                except: pass
+                
+                st.success(f"✅ Nova base criada! O horário vigente a partir de {data_inicio_nova} já está disponível na planilha.")
                 st.balloons()
             except Exception as e:
-                st.error(f"Erro: {e}")
+                st.error(f"Erro ao processar: {e}")
