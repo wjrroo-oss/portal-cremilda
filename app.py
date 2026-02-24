@@ -72,7 +72,6 @@ def extrair_dados_urania(pdf_file, turno):
                     aula_num += 1
     return dados
 
-# O NOVO CÁLCULO DE DATAS
 def calcular_datas_inteligentes(nome_arquivo):
     match = re.search(r'(\d{2})\s+(\d{2})', nome_arquivo)
     if match:
@@ -80,13 +79,11 @@ def calcular_datas_inteligentes(nome_arquivo):
         data_criacao_str = f"{match.group(1)}/{match.group(2)}/{ano_atual}"
         try:
             data_criacao = datetime.strptime(data_criacao_str, "%d/%m/%Y")
-            
-            # Calcula quantos dias faltam para a próxima Segunda-feira (0)
             dias_para_segunda = (0 - data_criacao.weekday()) % 7
-            if dias_para_segunda == 0: dias_para_segunda = 7 # Se gerou numa segunda, projeta pra próxima
+            if dias_para_segunda == 0: dias_para_segunda = 7 
             
             data_nova_vigencia = data_criacao + timedelta(days=dias_para_segunda)
-            data_fim_velha = data_nova_vigencia - timedelta(days=3) # Sexta anterior
+            data_fim_velha = data_nova_vigencia - timedelta(days=3) 
             
             return data_criacao_str, data_nova_vigencia.strftime("%d/%m/%Y"), data_fim_velha.strftime("%d/%m/%Y")
         except: pass
@@ -129,10 +126,19 @@ if st.button("🚀 ARQUIVAR ANTIGO E ATIVAR NOVO HORÁRIO"):
                 dados_antigos = aba_bruta.get_all_values()
                 
                 if len(dados_antigos) > 1:
-                    inicio_antigo = dados_antigos[0][8] if len(dados_antigos[0]) > 8 else "Desconhecido"
-                    nome_historico = f"HISTORICO_{inicio_antigo.replace('/','-')}_a_{data_fim_velha.replace('/','-')}"
+                    # --- PROTEÇÃO ADICIONADA AQUI ---
+                    # Garante que a linha de cabeçalho tenha pelo menos 10 colunas antes de tentar preencher
+                    while len(dados_antigos[0]) < 10:
+                        dados_antigos[0].append("")
+                    
+                    inicio_antigo = dados_antigos[0][8] if dados_antigos[0][8] else "Antigo"
+                    inicio_limpo = inicio_antigo.replace('/','-')
+                    fim_limpo = data_fim_velha.replace('/','-')
+                    
+                    nome_historico = f"HISTORICO_{inicio_limpo}_a_{fim_limpo}"
                     dados_antigos[0][9] = data_fim_velha
-                    aba_bruta.update_title(nome_historico)
+                    
+                    aba_bruta.update_title(nome_historico[:90]) # Limite de caracteres do Google Sheets
                     aba_bruta.update(range_name='A1', values=dados_antigos)
                 else:
                     aba_bruta.update_title("BKP_VAZIO")
