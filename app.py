@@ -122,41 +122,43 @@ if st.button("🚀 ARQUIVAR ANTIGO E ATIVAR NOVO HORÁRIO"):
                 client = gspread.authorize(creds)
                 planilha = client.open_by_key(ID_PLANILHA_MASTER)
                 
-                aba_bruta = planilha.worksheet("BASE_DADOS_BRUTA")
-                dados_antigos = aba_bruta.get_all_values()
-                
-                if len(dados_antigos) > 1:
-                    # --- PROTEÇÃO ADICIONADA AQUI ---
-                    # Garante que a linha de cabeçalho tenha pelo menos 10 colunas antes de tentar preencher
-                    while len(dados_antigos[0]) < 10:
-                        dados_antigos[0].append("")
-                    
-                    inicio_antigo = dados_antigos[0][8] if dados_antigos[0][8] else "Antigo"
-                    inicio_limpo = inicio_antigo.replace('/','-')
-                    fim_limpo = data_fim_velha.replace('/','-')
-                    
-                    nome_historico = f"HISTORICO_{inicio_limpo}_a_{fim_limpo}"
-                    dados_antigos[0][9] = data_fim_velha
-                    
-                    aba_bruta.update_title(nome_historico[:90]) # Limite de caracteres do Google Sheets
-                    aba_bruta.update(range_name='A1', values=dados_antigos)
-                else:
-                    aba_bruta.update_title("BKP_VAZIO")
+                # --- ARQUIVAMENTO BLINDADO ---
+                try:
+                    aba_bruta = planilha.worksheet("BASE_DADOS_BRUTA")
+                    dados_antigos = aba_bruta.get_all_values()
+                    if len(dados_antigos) > 1:
+                        # Pega as datas diretamente das células fixas (I1 e J1) para não dar erro
+                        inicio_antigo = aba_bruta.acell('I1').value or "Antigo"
+                        inicio_limpo = inicio_antigo.replace('INÍCIO: ', '').replace('/', '-')
+                        fim_limpo = data_fim_velha.replace('/', '-')
+                        
+                        aba_bruta.update_acell('J1', f"FIM: {data_fim_velha}")
+                        nome_historico = f"HISTORICO_{inicio_limpo}_a_{fim_limpo}"
+                        aba_bruta.update_title(nome_historico[:90]) 
+                    else:
+                        aba_bruta.update_title("BKP_VAZIO")
+                except gspread.exceptions.WorksheetNotFound:
+                    pass # Se não existir, apenas segue em frente
 
+                # --- NOVA BASE COM DATAS EXATAS NAS CÉLULAS I1 E J1 ---
                 nova_aba_bruta = planilha.add_worksheet(title="BASE_DADOS_BRUTA", rows=1000, cols=15)
-                
                 dados_m = extrair_dados_urania(pdf_mat, "MATUTINO")
                 dados_v = extrair_dados_urania(pdf_vesp, "VESPERTINO")
                 todos_dados = dados_m + dados_v
                 
-                cabecalho = ["Turno", "Professor", "Dia", "Horário", "Turma", "Disciplina", "Sala", "Pavilhao", data_inicio_nova, "Em Aberto"]
+                cabecalho = ["Turno", "Professor", "Dia", "Horário", "Turma", "Disciplina", "Sala", "Pavilhao"]
                 nova_aba_bruta.append_row(cabecalho)
                 if todos_dados: nova_aba_bruta.append_rows(todos_dados)
+                
+                # Cravando as datas nos lugares corretos para o Apps Script ler
+                nova_aba_bruta.update_acell('I1', f"{data_inicio_nova}")
+                nova_aba_bruta.update_acell('J1', "Em Aberto")
                 
                 try: planilha.del_worksheet(planilha.worksheet("BKP_VAZIO"))
                 except: pass
                 
-                st.success(f"✅ Nova base criada! O horário vigente a partir de {data_inicio_nova} já está disponível na planilha.")
+                st.success(f"✅ Base criada com sucesso! Vespertino e Matutino processados.")
                 st.balloons()
             except Exception as e:
                 st.error(f"Erro ao processar: {e}")
+
