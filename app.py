@@ -22,7 +22,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🏫 Portal de Alocação - Cremilda")
-st.markdown("<p style='text-align: center; color: #64748b;'>Módulo de Extração, Vigência e Histórico</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #64748b;'>Módulo de Extração, Vigência e Versionamento</p>", unsafe_allow_html=True)
 
 def mapear_sala_pavilhao(turma, turno):
     t = turma.upper().replace(" ", "").replace("º", "").replace("°", "").replace("ANO", "")
@@ -101,63 +101,78 @@ if pdf_mat:
     data_criacao, data_sugerida_nova, data_sugerida_velha = calcular_datas_inteligentes(pdf_mat.name)
 
 st.markdown("<div class='date-box'>", unsafe_allow_html=True)
-st.markdown("### 📅 Validação de Vigência")
+st.markdown("### 📅 Validação de Vigência e Versão")
 st.markdown(f"<div class='info-criacao'>🕒 Data de criação identificada no Urânia: {data_criacao}</div>", unsafe_allow_html=True)
 
 col_dt1, col_dt2 = st.columns(2)
 with col_dt1:
-    data_fim_velha = st.text_input("Encerramento do Horário Atual (Sexta-feira):", value=data_sugerida_velha, placeholder="Ex: 30/01/2026")
+    data_fim_velha = st.text_input("Encerramento da Versão Atual (Sexta):", value=data_sugerida_velha, placeholder="Ex: 30/01/2026")
 with col_dt2:
-    data_inicio_nova = st.text_input("Início da Nova Vigência (Segunda-feira):", value=data_sugerida_nova, placeholder="Ex: 02/02/2026")
+    data_inicio_nova = st.text_input("Início da Nova Versão (Segunda):", value=data_sugerida_nova, placeholder="Ex: 02/02/2026")
 st.markdown("</div>", unsafe_allow_html=True)
 
 if st.button("🚀 ARQUIVAR ANTIGO E ATIVAR NOVO HORÁRIO"):
     if not data_inicio_nova or not pdf_mat or not pdf_vesp:
         st.warning("⚠️ Preencha as datas e anexe os dois PDFs.")
     else:
-        with st.spinner("Arquivando histórico e gerando nova base oficial..."):
+        with st.spinner("Compilando dados, criando versão e injetando na planilha..."):
             try:
                 creds_dict = st.secrets["google_credentials"]
                 creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
                 client = gspread.authorize(creds)
                 planilha = client.open_by_key(ID_PLANILHA_MASTER)
                 
-                # --- ARQUIVAMENTO BLINDADO ---
+                # --- SISTEMA DE VERSIONAMENTO INTELIGENTE ---
+                abas = planilha.worksheets()
+                num_historicos = sum(1 for a in abas if str(a.title).startswith("HISTORICO_"))
+                versao_antiga_num = num_historicos + 1
+                nova_versao_num = versao_antiga_num + 1
+
                 try:
                     aba_bruta = planilha.worksheet("BASE_DADOS_BRUTA")
                     dados_antigos = aba_bruta.get_all_values()
                     if len(dados_antigos) > 1:
-                        # Pega as datas diretamente das células fixas (I1 e J1) para não dar erro
-                        inicio_antigo = aba_bruta.acell('I1').value or "Antigo"
-                        inicio_limpo = inicio_antigo.replace('INÍCIO: ', '').replace('/', '-')
+                        # Pega a data de inicio exata do antigo para o título
+                        inicio_limpo = "Desconhecido"
+                        if len(dados_antigos[0]) >= 9:
+                            inicio_limpo = dados_antigos[0][8].replace('/', '-')
                         fim_limpo = data_fim_velha.replace('/', '-')
                         
-                        aba_bruta.update_acell('J1', f"FIM: {data_fim_velha}")
-                        nome_historico = f"HISTORICO_{inicio_limpo}_a_{fim_limpo}"
+                        # Garante que as colunas existam na memória antes de editar
+                        while len(dados_antigos[0]) < 11: dados_antigos[0].append("")
+                        dados_antigos[0][9] = data_fim_velha # Coluna J
+                        
+                        nome_historico = f"HISTORICO_V{versao_antiga_num}_{inicio_limpo}_a_{fim_limpo}"
                         aba_bruta.update_title(nome_historico[:90]) 
+                        aba_bruta.update(range_name='A1', values=dados_antigos)
                     else:
                         aba_bruta.update_title("BKP_VAZIO")
                 except gspread.exceptions.WorksheetNotFound:
-                    pass # Se não existir, apenas segue em frente
+                    pass
 
-                # --- NOVA BASE COM DATAS EXATAS NAS CÉLULAS I1 E J1 ---
-                nova_aba_bruta = planilha.add_worksheet(title="BASE_DADOS_BRUTA", rows=1000, cols=15)
+                # --- NOVA BASE MACIÇA (À PROVA DE CORTES) ---
+                # Criamos com 3000 linhas para o Google Sheets não engasgar!
+                nova_aba_bruta = planilha.add_worksheet(title="BASE_DADOS_BRUTA", rows=3000, cols=15)
+                
+                # Reseta o ponteiro dos PDFs por segurança do Streamlit
+                pdf_mat.seek(0)
+                pdf_vesp.seek(0)
+                
                 dados_m = extrair_dados_urania(pdf_mat, "MATUTINO")
                 dados_v = extrair_dados_urania(pdf_vesp, "VESPERTINO")
                 todos_dados = dados_m + dados_v
                 
-                cabecalho = ["Turno", "Professor", "Dia", "Horário", "Turma", "Disciplina", "Sala", "Pavilhao"]
-                nova_aba_bruta.append_row(cabecalho)
-                if todos_dados: nova_aba_bruta.append_rows(todos_dados)
+                # Formato: 0:Turno, 1:Prof, 2:Dia, 3:Aula, 4:Turma, 5:Disc, 6:Sala, 7:Pav, 8:Inicio, 9:Fim, 10:Versao
+                cabecalho = ["Turno", "Professor", "Dia", "Horário", "Turma", "Disciplina", "Sala", "Pavilhao", data_inicio_nova, "Em Aberto", f"Versão {nova_versao_num}"]
                 
-                # Cravando as datas nos lugares corretos para o Apps Script ler
-                nova_aba_bruta.update_acell('I1', f"{data_inicio_nova}")
-                nova_aba_bruta.update_acell('J1', "Em Aberto")
+                # Injeta a base inteira em um único milissegundo (1 chamada de API)
+                matriz_completa = [cabecalho] + todos_dados
+                nova_aba_bruta.update(range_name='A1', values=matriz_completa)
                 
                 try: planilha.del_worksheet(planilha.worksheet("BKP_VAZIO"))
                 except: pass
                 
-                st.success(f"✅ Base criada com sucesso! Vespertino e Matutino processados.")
+                st.success(f"✅ Versão {nova_versao_num} Ativada! Todos os dados de Matutino e Vespertino foram processados com sucesso.")
                 st.balloons()
             except Exception as e:
                 st.error(f"Erro ao processar: {e}")
