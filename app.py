@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timedelta
 
 # ==============================================================================
-# CONFIGURAÇÃO DE ACESSO E MEMÓRIA
+# CONFIGURAÇÃO DE ACESSO
 # ==============================================================================
 ID_PLANILHA_MASTER = "1XtIoPk-BL7egviMXJy-qrb0NB--EM7X-l-emusS1f24"
 
@@ -45,11 +45,9 @@ def calcular_sugestao_datas(nome_arquivo):
         try:
             criacao = datetime.strptime(f"{dia_str}/{mes_str}/{ano}", "%d/%m/%Y")
             dias_para_segunda = (7 - criacao.weekday()) % 7
-            if dias_para_segunda == 0: 
-                dias_para_segunda = 7
+            if dias_para_segunda == 0: dias_para_segunda = 7
             return (criacao + timedelta(days=dias_para_segunda)).date()
-        except ValueError: 
-            continue
+        except ValueError: continue
     return (hoje + timedelta(days=(7 - hoje.weekday()))).date()
 
 def calcular_sexta_anterior(data_inicio):
@@ -60,8 +58,7 @@ def formatar_nome_turma(turma_suja, disciplina):
     serie_match = re.search(r'\d', t_limpa)
     letra_match = re.search(r'[A-Z]$', t_limpa)
     nome_final = turma_suja
-    if serie_match and letra_match: 
-        nome_final = f"{serie_match.group(0)}º ANO {letra_match.group(0)}"
+    if serie_match and letra_match: nome_final = f"{serie_match.group(0)}º ANO {letra_match.group(0)}"
     if nome_final == "2º ANO D":
         disc_up = str(disciplina).upper()
         if "LETR" in disc_up: nome_final = "2º ANO D (Let)"
@@ -70,15 +67,12 @@ def formatar_nome_turma(turma_suja, disciplina):
 
 def mapear_sala_pavilhao(turma, turno):
     t = turma.upper().replace(" ", "").replace("º", "").replace("°", "").replace("ANO", "")
-    if turno == "MATUTINO": 
-        mapa = {'6A': ('13', 'P1E2'), '6B': ('14', 'P1E2'), '7A': ('15', 'P1E2'), '7B': ('16', 'P1E2'), '8A': ('17', 'P1E2'), '8B': ('18', 'P1E2'), '9A': ('19', 'P1E2'), '9B': ('06', 'P1E2'), '1A': ('01', 'P1E2'), '1B': ('20', 'P1E2'), '1C': ('04', 'P1E2'), '1D': ('05', 'P1E2'), '2A': ('21', 'P1E2'), '2B': ('22', 'P1E2'), '2C': ('23', 'P1E2'), '2D': ('24', 'P1E2'), '3A': ('08', 'P1E2'), '3B': ('09', 'P1E2'), '3C': ('10', 'P1E2'), '3D': ('11', 'P1E2'), '3E': ('12', 'P1E2')}
-    else: 
-        mapa = {'6C': ('13', 'P2'), '6D': ('14', 'P2'), '6E': ('15', 'P2'), '6F': ('16', 'P2'), '6G': ('17', 'P2'), '7C': ('19', 'P2'), '7D': ('18', 'P2'), '7E': ('20', 'P2'), '7F': ('21', 'P2'), '8C': ('01', 'P2'), '8D': ('04', 'P2'), '8E': ('22', 'P2'), '8F': ('23', 'P2'), '8G': ('24', 'P2'), '9C': ('05', 'P1'), '9D': ('08', 'P1'), '9E': ('09', 'P1'), '9F': ('06', 'P1'), '1E': ('10', 'P1'), '1F': ('11', 'P1'), '2E': ('12', 'P1')}
+    if turno == "MATUTINO": mapa = {'6A': ('13', 'P1E2'), '6B': ('14', 'P1E2'), '7A': ('15', 'P1E2'), '7B': ('16', 'P1E2'), '8A': ('17', 'P1E2'), '8B': ('18', 'P1E2'), '9A': ('19', 'P1E2'), '9B': ('06', 'P1E2'), '1A': ('01', 'P1E2'), '1B': ('20', 'P1E2'), '1C': ('04', 'P1E2'), '1D': ('05', 'P1E2'), '2A': ('21', 'P1E2'), '2B': ('22', 'P1E2'), '2C': ('23', 'P1E2'), '2D': ('24', 'P1E2'), '3A': ('08', 'P1E2'), '3B': ('09', 'P1E2'), '3C': ('10', 'P1E2'), '3D': ('11', 'P1E2'), '3E': ('12', 'P1E2')}
+    else: mapa = {'6C': ('13', 'P2'), '6D': ('14', 'P2'), '6E': ('15', 'P2'), '6F': ('16', 'P2'), '6G': ('17', 'P2'), '7C': ('19', 'P2'), '7D': ('18', 'P2'), '7E': ('20', 'P2'), '7F': ('21', 'P2'), '8C': ('01', 'P2'), '8D': ('04', 'P2'), '8E': ('22', 'P2'), '8F': ('23', 'P2'), '8G': ('24', 'P2'), '9C': ('05', 'P1'), '9D': ('08', 'P1'), '9E': ('09', 'P1'), '9F': ('06', 'P1'), '1E': ('10', 'P1'), '1F': ('11', 'P1'), '2E': ('12', 'P1')}
     return mapa.get(t, ('00', 'P?'))
 
 def extrair_dados_pdf(pdf_file, turno, data_inicio_str, num_versao):
-    dados = []
-    dias = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"]
+    dados = []; dias = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"]
     with pdfplumber.open(pdf_file) as pdf:
         for page in pdf.pages:
             tables = page.extract_tables()
@@ -108,8 +102,7 @@ def extrair_dados_pdf(pdf_file, turno, data_inicio_str, num_versao):
                             if "(" in celula and ")" in celula:
                                 match = re.match(r'^(.*?)\s*\((.*?)\)$', celula)
                                 if match:
-                                    disc = match.group(1).strip()
-                                    prof = match.group(2).strip().title()
+                                    disc = match.group(1).strip(); prof = match.group(2).strip().title()
                                     turma_atual = formatar_nome_turma(turmas[col_idx - 1], disc)
                                     sala, pav = mapear_sala_pavilhao(turma_atual, turno)
                                     duracao = "0:50" if aula_num in [1, 3] else "0:45"
@@ -118,92 +111,65 @@ def extrair_dados_pdf(pdf_file, turno, data_inicio_str, num_versao):
     return dados
 
 # ==============================================================================
-# CONEXÃO GOOGLE SHEETS (SEM CACHE PARA EVITAR ERROS DE SESSÃO)
+# CONEXÃO BLINDADA (SEM CACHE DE SESSÃO)
 # ==============================================================================
 def get_client():
     creds = service_account.Credentials.from_service_account_info(st.secrets["google_credentials"], scopes=["https://www.googleapis.com/auth/spreadsheets"])
     return gspread.authorize(creds)
 
-# Removido o st.cache_data para evitar o bug de 'AuthorizedSession'
+@st.cache_data(ttl=10) # Guarda SÓ dados puros (texto) para não crashar a sessão
 def obter_estado_sistema():
-    client = get_client()
-    planilha = client.open_by_key(ID_PLANILHA_MASTER)
+    client = get_client(); planilha = client.open_by_key(ID_PLANILHA_MASTER)
     estado = {"mat": {"versao": 1, "inicio": "--/--/----"}, "vesp": {"versao": 1, "inicio": "--/--/----"}}
-    aba_ativa = None
-    nome_aba_ativa = ""
-    abas_historico = []
+    nome_aba_ativa = ""; abas_historico = []
     
     for aba in planilha.worksheets():
         titulo = str(aba.title)
         if titulo.endswith("_a") or titulo == "BASE_DADOS_BRUTA": 
-            aba_ativa = aba
             nome_aba_ativa = titulo
-        elif titulo.startswith("V"): 
+            dados = aba.get_all_values()
+            for linha in dados[1:]:
+                if len(linha) >= 12:
+                    turno = str(linha[0]).upper(); versao_num = int(re.sub(r'\D', '', str(linha[11])) or 1)
+                    if turno == "MATUTINO": estado["mat"] = {"versao": versao_num, "inicio": linha[9]}
+                    elif turno == "VESPERTINO": estado["vesp"] = {"versao": versao_num, "inicio": linha[9]}
+        elif titulo.startswith("V") or titulo.startswith("HV"): 
             abas_historico.append(titulo)
             
-    if aba_ativa:
-        dados = aba_ativa.get_all_values()
-        for linha in dados[1:]:
-            if len(linha) >= 12:
-                turno = str(linha[0]).upper()
-                versao_num = int(re.sub(r'\D', '', str(linha[11])) or 1)
-                if turno == "MATUTINO": estado["mat"] = {"versao": versao_num, "inicio": linha[9]}
-                elif turno == "VESPERTINO": estado["vesp"] = {"versao": versao_num, "inicio": linha[9]}
-                    
-    return estado, aba_ativa, nome_aba_ativa, sorted(abas_historico)
+    return estado, nome_aba_ativa, sorted(abas_historico)
 
-try: 
-    estado_atual, aba_ativa, nome_aba_ativa, abas_historico = obter_estado_sistema()
-except Exception as e: 
-    estado_atual = {"mat": {"versao": 1, "inicio": "-"}, "vesp": {"versao": 1, "inicio": "-"}}
-    aba_ativa = None
-    nome_aba_ativa = "V01_02_02_26_a"
-    abas_historico = []
+try: estado_atual, nome_aba_ativa, abas_historico = obter_estado_sistema()
+except Exception as e: estado_atual = {"mat": {"versao": 1, "inicio": "-"}, "vesp": {"versao": 1, "inicio": "-"}}; nome_aba_ativa = "V01_02_02_26_a"; abas_historico = []
 
-# ==============================================================================
-# PAINEL DE CONTROLO
-# ==============================================================================
 with st.expander("🗑️ Lixeira: Apagar Históricos Antigos", expanded=False):
     abas_para_apagar = st.multiselect("Selecione as versões:", abas_historico)
     if st.button("Apagar Selecionadas"):
-        client = get_client()
-        plan = client.open_by_key(ID_PLANILHA_MASTER)
+        client = get_client(); plan = client.open_by_key(ID_PLANILHA_MASTER)
         for nome_aba in abas_para_apagar:
             try: plan.del_worksheet(plan.worksheet(nome_aba))
             except Exception: pass
-        st.rerun()
+        st.cache_data.clear(); st.rerun()
 
 st.markdown("<div class='mode-box'>", unsafe_allow_html=True)
-modo_operacao = st.radio(
-    "👉 Selecione o Modo:", 
-    options=[
-        "📌 MODO VÁLIDO (Arquiva o antigo e avança a versão oficial)",
-        "🧪 MODO TESTE (Substitui a grade atual, mas NÃO cria histórico)"
-    ], 
-    index=0
-)
+modo_operacao = st.radio("👉 Selecione o Modo:", options=["📌 MODO VÁLIDO (Arquiva o antigo adicionando a data final no nome da aba e avança a versão oficial)", "🧪 MODO TESTE (Substitui a grade atual, mas NÃO cria histórico)"], index=0)
 st.markdown("</div>", unsafe_allow_html=True)
 
 col1, col2 = st.columns(2)
 with col1: 
     st.markdown(f"<div class='card'><h4>☀️ Matutino (Atual: V{estado_atual['mat']['versao']})</h4>", unsafe_allow_html=True)
     pdf_mat = st.file_uploader("PDF Matutino:", type="pdf")
-    
     if pdf_mat and st.session_state.last_mat != pdf_mat.name:
         st.session_state.last_mat = pdf_mat.name
         st.session_state.dm = calcular_sugestao_datas(pdf_mat.name)
-        
     data_mat = st.date_input("📅 Início da Vigência (Seg):", value=st.session_state.dm, format="DD/MM/YYYY", key="dm")
     st.markdown("</div>", unsafe_allow_html=True)
 
 with col2: 
     st.markdown(f"<div class='card card-orange'><h4>🌇 Vespertino (Atual: V{estado_atual['vesp']['versao']})</h4>", unsafe_allow_html=True)
     pdf_vesp = st.file_uploader("PDF Vespertino:", type="pdf")
-    
     if pdf_vesp and st.session_state.last_vesp != pdf_vesp.name:
         st.session_state.last_vesp = pdf_vesp.name
         st.session_state.dv = calcular_sugestao_datas(pdf_vesp.name)
-        
     data_vesp = st.date_input("📅 Início da Vigência (Seg):", value=st.session_state.dv, format="DD/MM/YYYY", key="dv")
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -212,22 +178,19 @@ resetar = st.checkbox("⚠️ MODO VIRADA DE ANO: Apagar TUDO e começar na V01_
 st.markdown("</div>", unsafe_allow_html=True)
 
 if st.button("🚀 INJETAR DADOS NO SISTEMA"):
-    if not pdf_mat and not pdf_vesp and not resetar: 
-        st.warning("Selecione um PDF.")
+    if not pdf_mat and not pdf_vesp and not resetar: st.warning("Selecione um PDF.")
     else:
         is_valido = "VÁLIDO" in modo_operacao
-        str_data_mat = data_mat.strftime("%d/%m/%Y")
-        str_data_vesp = data_vesp.strftime("%d/%m/%Y")
+        str_data_mat = data_mat.strftime("%d/%m/%Y"); str_data_vesp = data_vesp.strftime("%d/%m/%Y")
         
         data_base_str = data_mat.strftime("%d_%m_%y") if pdf_mat else data_vesp.strftime("%d_%m_%y")
         fim_calc = calcular_sexta_anterior(data_mat) if pdf_mat else calcular_sexta_anterior(data_vesp)
         data_fim_str = fim_calc.strftime("%d_%m_%y")
-        
         nome_fechado = ""
 
         with st.spinner("Processando Inteligência de Versões..."):
             try:
-                client = get_client()
+                client = get_client() # Conexão FRESCA (Evita o erro Auth)
                 plan = client.open_by_key(ID_PLANILHA_MASTER)
                 
                 if resetar:
@@ -237,17 +200,20 @@ if st.button("🚀 INJETAR DADOS NO SISTEMA"):
                             except Exception: pass
                     nome_novo = f"V01_{data_base_str}_a"
                     aba_bruta = plan.add_worksheet(title=nome_novo, rows=3000, cols=12)
-                    aba_bruta.hide() # <-- COMANDO PARA OCULTAR A ABA IMEDIATAMENTE
-                    dados_antigos = []
-                    v_mat_nova = 1; v_vesp_nova = 1
+                    aba_bruta.hide() # ESCONDE A ABA!
+                    dados_antigos = []; v_mat_nova = 1; v_vesp_nova = 1
                 else:
+                    try: 
+                        aba_ativa = plan.worksheet(nome_aba_ativa)
+                        dados_antigos = aba_ativa.get_all_values()
+                    except: 
+                        aba_ativa = None
+                        dados_antigos = []
+
                     if aba_ativa is None: 
                         aba_bruta = plan.add_worksheet(title=f"V01_{data_base_str}_a", rows=3000, cols=12)
-                        aba_bruta.hide()
-                        dados_antigos = []
-                    else: 
-                        aba_bruta = aba_ativa
-                        dados_antigos = aba_bruta.get_all_values()
+                        aba_bruta.hide() # ESCONDE A ABA!
+                    else: aba_bruta = aba_ativa
 
                     if is_valido:
                         v_mat_nova = estado_atual['mat']['versao'] + 1 if pdf_mat else estado_atual['mat']['versao']
@@ -266,13 +232,12 @@ if st.button("🚀 INJETAR DADOS NO SISTEMA"):
                                 
                             aba_bruta.update_title(nome_fechado)
                             aba_bruta.update(range_name='A1', values=dados_antigos)
-                            aba_bruta.hide() # Esconde o histórico
+                            aba_bruta.hide() # ESCONDE HISTÓRICO
                             
                             aba_bruta = plan.add_worksheet(title=nome_novo, rows=3000, cols=12)
-                            aba_bruta.hide() # Esconde a aba nova
+                            aba_bruta.hide() # ESCONDE ABA NOVA
                     else:
-                        v_mat_nova = estado_atual['mat']['versao']
-                        v_vesp_nova = estado_atual['vesp']['versao']
+                        v_mat_nova = estado_atual['mat']['versao']; v_vesp_nova = estado_atual['vesp']['versao']
                         nome_novo = nome_aba_ativa
 
                 dados_preservados = []
@@ -292,14 +257,8 @@ if st.button("🚀 INJETAR DADOS NO SISTEMA"):
                 aba_bruta.clear()
                 aba_bruta.update(range_name='A1', values=dados_finais)
                 
-                if resetar:
-                    st.success(f"✅ VIRADA DE ANO CONCLUÍDA! Base totalmente limpa e aba {nome_novo} criada (Oculta).")
-                    st.balloons()
-                elif is_valido: 
-                    if nome_fechado: st.success(f"✅ SUCESSO! A Versão Antiga foi encerrada ({nome_fechado}). A aba {nome_novo} foi criada!")
-                    else: st.success(f"✅ SUCESSO! A aba {nome_novo} foi criada (Oculta).")
-                    st.balloons()
-                else: 
-                    st.info("🧪 TESTE CONCLUÍDO! Substituição feita sem gerar histórico.")
-            except Exception as e: 
-                st.error(f"Erro Crítico durante o processo: {e}")
+                st.cache_data.clear()
+                if resetar: st.success(f"✅ VIRADA DE ANO! Base limpa e aba oculta {nome_novo} criada."); st.balloons()
+                elif is_valido: st.success(f"✅ SUCESSO! Antiga encerrada ({nome_fechado}). Nova criada oculta ({nome_novo})."); st.balloons()
+                else: st.info("🧪 TESTE CONCLUÍDO! Substituição feita na aba oculta sem histórico.")
+            except Exception as e: st.error(f"Erro Crítico: {e}")
