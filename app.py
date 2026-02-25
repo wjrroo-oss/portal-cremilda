@@ -71,6 +71,15 @@ def formatar_nome_turma(turma_suja, disciplina):
     if serie_match and letra_match:
         nome_final = f"{serie_match.group(0)}º ANO {letra_match.group(0)}"
     
+    # VACINA DO 2º ANO D: Lê apenas as primeiras 4 letras ("LETR" e "APROF")
+    if nome_final == "2º ANO D":
+        disc_up = str(disciplina).upper()
+        if "LETR" in disc_up:
+            nome_final = "2º ANO D (Let)"
+        elif "APROF" in disc_up:
+            nome_final = "2º ANO D (Aprof)"
+    return nome_final
+    
     if nome_final == "2º ANO D":
         disc_up = str(disciplina).upper()
         if "LETRAMENTO" in disc_up:
