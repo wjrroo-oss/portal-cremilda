@@ -12,23 +12,40 @@ from datetime import datetime, timedelta
 ID_PLANILHA_MASTER = "1XtIoPk-BL7egviMXJy-qrb0NB--EM7X-l-emusS1f24" 
 
 # ==============================================================================
-# DESIGN E LAYOUT (CSS INJETADO)
+# DESIGN E LAYOUT (CSS INJETADO - JAMSTACK UX)
 # ==============================================================================
-st.set_page_config(page_title="Portal Cremilda", page_icon="🏫", layout="centered")
+st.set_page_config(page_title="Portal Cremilda", page_icon="🏫", layout="wide")
 st.markdown("""
     <style>
-        .stApp { background-color: #f8fafc; font-family: 'Inter', sans-serif; }
-        h1 { color: #1e293b; font-weight: 800; text-align: center; }
-        .stButton>button { background-color: #2563eb; color: white; border-radius: 8px; font-weight: 600; width: 100%; padding: 0.75rem; border: none; }
-        .stButton>button:hover { background-color: #1d4ed8; transform: translateY(-2px); }
-        .date-box { background-color: #e2e8f0; padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 5px solid #2563eb; }
-        .info-criacao { font-size: 0.85rem; color: #475569; margin-bottom: 10px; font-weight: 600; }
-        .danger-zone { border: 1px solid #ef4444; padding: 15px; border-radius: 8px; background-color: #fef2f2; margin-top: 20px;}
+        /* Reset e Fontes */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        .stApp { background-color: #f1f5f9; font-family: 'Inter', sans-serif; }
+        
+        /* Centralização Perfeita e Espaçamento */
+        .block-container { max-width: 900px; padding-top: 3rem; padding-bottom: 3rem; }
+        
+        /* Estilos de Texto */
+        h1 { color: #0f172a; font-weight: 800; text-align: center; font-size: 2.5rem; margin-bottom: 0.5rem;}
+        h3 { color: #334155; font-weight: 600; font-size: 1.2rem; }
+        .subtitle { text-align: center; color: #64748b; font-size: 1.1rem; margin-bottom: 2rem; }
+        
+        /* Cards e Boxes */
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px -3px rgba(0,0,0,0.05); margin-bottom: 20px; border-top: 4px solid #3b82f6;}
+        .card-orange { border-top-color: #f59e0b; }
+        .date-box { background-color: #f8fafc; padding: 15px; border-radius: 8px; border-left: 4px solid #10b981; margin-bottom: 15px; }
+        .danger-zone { border: 1px solid #fecaca; padding: 20px; border-radius: 10px; background-color: #fef2f2; margin-top: 30px;}
+        
+        /* Botões Padrão App */
+        .stButton>button { background-color: #2563eb; color: white; border-radius: 8px; font-weight: 700; width: 100%; padding: 0.8rem; border: none; transition: all 0.3s; font-size: 1.1rem;}
+        .stButton>button:hover { background-color: #1d4ed8; transform: translateY(-2px); box-shadow: 0 4px 6px rgba(37,99,235,0.2); }
+        
+        /* Ajuste nativo do Streamlit */
+        div[data-testid="stFileUploader"] { padding: 1.5rem; background-color: #f8fafc; border-radius: 8px; border: 1px dashed #cbd5e1; }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🏫 Portal de Alocação - Cremilda")
-st.markdown("<p style='text-align: center; color: #64748b;'>Módulo de Extração, Vigência e Versionamento</p>", unsafe_allow_html=True)
+st.markdown("<h1>🏫 Portal de Alocação</h1>", unsafe_allow_html=True)
+st.markdown("<div class='subtitle'>Módulo de Extração Inteligente Urânia → Sheets</div>", unsafe_allow_html=True)
 
 # ==============================================================================
 # FUNÇÕES DE NEGÓCIO (MAPEAMENTO E CÁLCULO)
@@ -41,16 +58,26 @@ def mapear_sala_pavilhao(turma, turno):
         mapa = {'6C': ('13', 'P2'), '6D': ('14', 'P2'), '6E': ('15', 'P2'), '6F': ('16', 'P2'), '6G': ('17', 'P2'), '7C': ('19', 'P2'), '7D': ('18', 'P2'), '7E': ('20', 'P2'), '7F': ('21', 'P2'), '8C': ('01', 'P2'), '8D': ('04', 'P2'), '8E': ('22', 'P2'), '8F': ('23', 'P2'), '8G': ('24', 'P2'), '9C': ('05', 'P1'), '9D': ('08', 'P1'), '9E': ('09', 'P1'), '9F': ('06', 'P1'), '1E': ('10', 'P1'), '1F': ('11', 'P1'), '2E': ('12', 'P1')}
     return mapa.get(t, ('00', 'P?'))
 
-def formatar_nome_turma(turma_suja):
-    # Transforma "9A" ou "9° Ano A" em "9º ANO A" perfeito
+def formatar_nome_turma(turma_suja, disciplina):
     t_limpa = turma_suja.upper().replace(" ", "").replace("º", "").replace("°", "").replace("ANO", "")
     serie_match = re.search(r'\d', t_limpa)
     letra_match = re.search(r'[A-Z]$', t_limpa)
+    
+    nome_final = turma_suja
     if serie_match and letra_match:
-        return f"{serie_match.group(0)}º ANO {letra_match.group(0)}"
-    return turma_suja
+        nome_final = f"{serie_match.group(0)}º ANO {letra_match.group(0)}"
+    
+    # A BALA DE PRATA PARA O 2º ANO D (Salva na base bruta já mastigado!)
+    if nome_final == "2º ANO D":
+        disc_up = str(disciplina).upper()
+        if "LETRAMENTO" in disc_up:
+            nome_final = "2º ANO D (Let)"
+        elif "APROFUNDAMENTO" in disc_up:
+            nome_final = "2º ANO D (Aprof)"
+            
+    return nome_final
 
-def extrair_dados(pdf_file, turno):
+def extrair_dados(pdf_file, turno, data_inicio, num_versao):
     dados = []
     dias = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"]
     with pdfplumber.open(pdf_file) as pdf:
@@ -78,39 +105,23 @@ def extrair_dados(pdf_file, turno):
                     if not any("(" in c for c in row_clean): continue
                     for col_idx in range(1, len(row_clean)):
                         if col_idx - 1 < len(turmas):
-                            turma_atual = formatar_nome_turma(turmas[col_idx - 1])
                             celula = row_clean[col_idx]
                             if "(" in celula and ")" in celula:
                                 match = re.match(r'^(.*?)\s*\((.*?)\)$', celula)
                                 if match:
                                     disc = match.group(1).strip()
                                     prof = match.group(2).strip().title()
+                                    
+                                    # Passa a disciplina para formar o nome final do 2º ANO D
+                                    turma_atual = formatar_nome_turma(turmas[col_idx - 1], disc)
                                     sala, pav = mapear_sala_pavilhao(turma_atual, turno)
                                     
-                                    # Lógica exata de duração
-                                    duracao = "0:45"
-                                    if aula_num == 1: duracao = "0:50"
-                                    if aula_num == 3: duracao = "0:50" 
+                                    duracao = "0:50" if aula_num in [1, 3] else "0:45"
                                     
-                                    # Formato: Turno | Prof | Dia | Aula | Turma | Disc | Sala | Pav | Duracao
-                                    dados.append([turno, prof, dia_nome, f"{aula_num}ª Aula", turma_atual, disc, f"S{sala}", pav, duracao])
+                                    # Colunas: 0:Turno | 1:Prof | 2:Dia | 3:Aula | 4:Turma | 5:Disc | 6:Sala | 7:Pav | 8:Dur | 9:Inicio | 10:Fim | 11:Versao
+                                    dados.append([turno, prof, dia_nome, f"{aula_num}ª Aula", turma_atual, disc, f"S{sala}", pav, duracao, data_inicio, "Em Aberto", f"V{num_versao}"])
                     aula_num += 1
     return dados
-
-def calcular_datas(nome_arquivo):
-    match = re.search(r'(\d{2})\s+(\d{2})', nome_arquivo)
-    if match:
-        ano = datetime.now().year
-        dc_str = f"{match.group(1)}/{match.group(2)}/{ano}"
-        try:
-            dc = datetime.strptime(dc_str, "%d/%m/%Y")
-            dias_seg = (0 - dc.weekday()) % 7
-            if dias_seg == 0: dias_seg = 7 
-            d_nova = dc + timedelta(days=dias_seg)
-            d_velha = d_nova - timedelta(days=3) 
-            return dc_str, d_nova.strftime("%d/%m/%Y"), d_velha.strftime("%d/%m/%Y")
-        except: pass
-    return "Não identificada", "", ""
 
 # ==============================================================================
 # COMUNICAÇÃO COM O GOOGLE SHEETS
@@ -121,85 +132,103 @@ def obter_info_planilha():
         creds = service_account.Credentials.from_service_account_info(st.secrets["google_credentials"], scopes=["https://www.googleapis.com/auth/spreadsheets"])
         client = gspread.authorize(creds)
         planilha = client.open_by_key(ID_PLANILHA_MASTER)
+        
+        # Puxa a base bruta atual para descobrir como estão os turnos
+        try:
+            aba_bruta = planilha.worksheet("BASE_DADOS_BRUTA")
+            dados_atuais = aba_bruta.get_all_values()
+        except:
+            dados_atuais = []
+
         abas = planilha.worksheets()
         num_historicos = sum(1 for a in abas if str(a.title).startswith("HV"))
-        return planilha, num_historicos
-    except:
-        return None, 0
+        
+        return planilha, num_historicos, dados_atuais
+    except Exception as e:
+        return None, 0, []
 
-planilha, num_historicos = obter_info_planilha()
-versao_atual = num_historicos + 1
-nova_versao_num = versao_atual + 1
+planilha, num_historicos, dados_atuais = obter_info_planilha()
+versao_global = num_historicos + 1
 
 # ==============================================================================
-# FRONTEND E EXECUÇÃO
+# INTERFACE GRÁFICA (VIGÊNCIA INDEPENDENTE)
 # ==============================================================================
+st.markdown("<div class='card'>", unsafe_allow_html=True)
+st.markdown("<h3>📝 Atualização por Turno (Vigência Independente)</h3>", unsafe_allow_html=True)
+st.write("Anexe apenas o PDF do turno que sofreu alteração. Se enviar os dois, ambos serão atualizados.")
+
 col1, col2 = st.columns(2)
-with col1: pdf_mat = st.file_uploader("PDF Matutino GERAL", type="pdf")
-with col2: pdf_vesp = st.file_uploader("PDF Vespertino GERAL", type="pdf")
+with col1: 
+    st.markdown("**Turno Matutino**")
+    pdf_mat = st.file_uploader("PDF Matutino GERAL", type="pdf")
+    data_mat = st.text_input("Data de Início (Matutino):", value="--/--/2026", key="dm")
 
-dc, d_nova, d_velha = calcular_datas(pdf_mat.name) if pdf_mat else ("Aguardando...", "", "")
-
-st.markdown("<div class='date-box'>", unsafe_allow_html=True)
-st.markdown(f"### ⚙️ O sistema está atualmente na **Versão {versao_atual}**")
-st.markdown(f"<div class='info-criacao'>🕒 Data de criação no Urânia: {dc}</div>", unsafe_allow_html=True)
-
-col_dt1, col_dt2 = st.columns(2)
-with col_dt1:
-    if versao_atual == 1:
-        st.info("Primeiro horário do ano. Não há versão anterior para encerrar.")
-        data_fim_velha = ""
-    else:
-        data_fim_velha = st.text_input(f"Encerramento da Versão {versao_atual} (Sexta):", value=d_velha)
-with col_dt2:
-    data_inicio_nova = st.text_input(f"Início da Versão {nova_versao_num} (Segunda):", value=d_nova)
+with col2: 
+    st.markdown("**Turno Vespertino**")
+    pdf_vesp = st.file_uploader("PDF Vespertino GERAL", type="pdf")
+    data_vesp = st.text_input("Data de Início (Vespertino):", value="--/--/2026", key="dv")
 st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("<div class='danger-zone'>", unsafe_allow_html=True)
-resetar = st.checkbox("⚠️ MODO VIRADA DE ANO: Apagar todo o histórico e reiniciar na Versão 1.")
+st.markdown("<h3 style='color: #b91c1c;'>⚠️ Opções Avançadas</h3>", unsafe_allow_html=True)
+arquivar = st.checkbox("Arquivar horário antigo (Recomendado se a mudança for grande)")
+resetar = st.checkbox("MODO VIRADA DE ANO: Apagar tudo e reiniciar na Versão 1.")
 st.markdown("</div>", unsafe_allow_html=True)
 
-if st.button(f"🚀 GERAR VERSÃO {1 if resetar else nova_versao_num} OFICIAL"):
-    if not data_inicio_nova or not pdf_mat or not pdf_vesp:
-        st.warning("⚠️ Preencha as datas e anexe os dois PDFs.")
+if st.button(f"🚀 INJETAR DADOS NO SISTEMA"):
+    if not pdf_mat and not pdf_vesp:
+        st.warning("⚠️ Precisa de anexar pelo menos um ficheiro PDF.")
     else:
-        with st.spinner("Construindo a base de dados em bloco maciço..."):
+        with st.spinner("Processando Inteligência de Turnos..."):
             try:
                 creds = service_account.Credentials.from_service_account_info(st.secrets["google_credentials"], scopes=["https://www.googleapis.com/auth/spreadsheets"])
                 client = gspread.authorize(creds)
                 plan = client.open_by_key(ID_PLANILHA_MASTER)
                 
+                # 1. Reset Global (Virada de ano)
                 if resetar:
                     for a in plan.worksheets():
                         if str(a.title).startswith("HV") or str(a.title) == "BASE_DADOS_BRUTA":
                             try: plan.del_worksheet(a)
                             except: pass
-                    nova_versao_num = 1
+                    versao_global = 1
+                    aba_bruta = plan.add_worksheet(title="BASE_DADOS_BRUTA", rows=3000, cols=12)
+                    dados_antigos = []
                 else:
-                    # ARQUIVAMENTO (Protegido contra Index Error)
-                    try:
-                        aba_bruta = plan.worksheet("BASE_DADOS_BRUTA")
-                        dados_antigos = aba_bruta.get_all_values()
-                        if len(dados_antigos) > 1:
-                            while len(dados_antigos[0]) < 12: dados_antigos[0].append("")
-                            dados_antigos[0][10] = data_fim_velha 
-                            nome_historico = f"HV{versao_atual}_{data_fim_velha.replace('/', '-')}"
-                            aba_bruta.update_title(nome_historico) 
-                            aba_bruta.update(range_name='A1', values=dados_antigos)
-                    except: pass
+                    aba_bruta = plan.worksheet("BASE_DADOS_BRUTA")
+                    dados_antigos = aba_bruta.get_all_values()
+                    
+                    # 2. Lógica de Arquivamento (Guarda um snapshot do que estava lá)
+                    if arquivar and len(dados_antigos) > 1:
+                        nome_historico = f"HV{versao_global}_{datetime.now().strftime('%d-%m-%H%M')}"
+                        aba_bruta.update_title(nome_historico) 
+                        aba_bruta = plan.add_worksheet(title="BASE_DADOS_BRUTA", rows=3000, cols=12)
+                        versao_global += 1
 
-                # GERAÇÃO DA BASE NOVA VIGENTE
-                nova_aba = plan.add_worksheet(title="BASE_DADOS_BRUTA", rows=3000, cols=15)
-                pdf_mat.seek(0); pdf_vesp.seek(0)
-                todos_dados = extrair_dados(pdf_mat, "MATUTINO") + extrair_dados(pdf_vesp, "VESPERTINO")
+                # 3. Separa os dados antigos que NÃO foram atualizados
+                dados_preservados = []
+                if len(dados_antigos) > 1:
+                    for linha in dados_antigos[1:]: # Ignora cabeçalho
+                        turno = linha[0].upper()
+                        # Se subiu o Matutino, apaga o Matutino velho. Mas preserva o Vespertino (se não subiu Vesp novo).
+                        if turno == "MATUTINO" and not pdf_mat:
+                            dados_preservados.append(linha)
+                        if turno == "VESPERTINO" and not pdf_vesp:
+                            dados_preservados.append(linha)
+
+                # 4. Extrai os Dados Novos (Com a Versão Global sendo usada como ID do Lote)
+                dados_novos_mat = extrair_dados(pdf_mat, "MATUTINO", data_mat, versao_global) if pdf_mat else []
+                dados_novos_vesp = extrair_dados(pdf_vesp, "VESPERTINO", data_vesp, versao_global) if pdf_vesp else []
+
+                # 5. Junta tudo (O Frankenstein Perfeito)
+                cabecalho = ["Turno", "Professor", "Dia", "Horário", "Turma", "Disciplina", "Sala", "Pavilhao", "Duracao", "Inicio_Vigencia", "Fim", "Versao_Turno"]
+                dados_finais = [cabecalho] + dados_preservados + dados_novos_mat + dados_novos_vesp
                 
-                # As colunas exatas que o Apps Script vai ler:
-                # 0:Turno | 1:Prof | 2:Dia | 3:Aula | 4:Turma | 5:Disc | 6:Sala | 7:Pav | 8:Duracao | 9:Inicio | 10:Fim | 11:Versao
-                cabecalho = ["Turno", "Professor", "Dia", "Horário", "Turma", "Disciplina", "Sala", "Pavilhao", "Duracao", data_inicio_nova, "Em Aberto", f"Versão {nova_versao_num}"]
+                # 6. Limpa e Atualiza
+                aba_bruta.clear()
+                aba_bruta.update(range_name='A1', values=dados_finais)
                 
-                nova_aba.update(range_name='A1', values=[cabecalho] + todos_dados)
-                
-                st.success(f"✅ Sucesso absoluto! A Versão {nova_versao_num} foi gravada na folha de cálculo.")
+                st.success("✅ Extração Impecável! Turnos atualizados de forma independente.")
                 st.balloons()
             except Exception as e:
                 st.error(f"Erro Crítico: {e}")
