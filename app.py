@@ -10,7 +10,6 @@ from datetime import datetime, timedelta
 # ==============================================================================
 ID_PLANILHA_MASTER = "1XtIoPk-BL7egviMXJy-qrb0NB--EM7X-l-emusS1f24"
 
-# Inicia a memória do calendário para forçar a mudança automática
 if "dm" not in st.session_state: st.session_state.dm = datetime.today().date()
 if "dv" not in st.session_state: st.session_state.dv = datetime.today().date()
 if "last_mat" not in st.session_state: st.session_state.last_mat = ""
@@ -61,17 +60,12 @@ def formatar_nome_turma(turma_suja, disciplina):
     serie_match = re.search(r'\d', t_limpa)
     letra_match = re.search(r'[A-Z]$', t_limpa)
     nome_final = turma_suja
-    
     if serie_match and letra_match: 
         nome_final = f"{serie_match.group(0)}º ANO {letra_match.group(0)}"
-        
     if nome_final == "2º ANO D":
         disc_up = str(disciplina).upper()
-        if "LETR" in disc_up: 
-            nome_final = "2º ANO D (Let)"
-        elif "APROF" in disc_up: 
-            nome_final = "2º ANO D (Aprof)"
-            
+        if "LETR" in disc_up: nome_final = "2º ANO D (Let)"
+        elif "APROF" in disc_up: nome_final = "2º ANO D (Aprof)"
     return nome_final
 
 def mapear_sala_pavilhao(turma, turno):
@@ -88,35 +82,26 @@ def extrair_dados_pdf(pdf_file, turno, data_inicio_str, num_versao):
     with pdfplumber.open(pdf_file) as pdf:
         for page in pdf.pages:
             tables = page.extract_tables()
-            if not tables: 
-                continue
-            
+            if not tables: continue
             turmas = []
             if len(tables[0]) > 0:
                 for c in tables[0][0]:
-                    if c and "ANO" in str(c).upper(): 
-                        turmas.append(str(c).replace('\n', ' ').strip().upper())
-                        
+                    if c and "ANO" in str(c).upper(): turmas.append(str(c).replace('\n', ' ').strip().upper())
             if not turmas:
                 texto = page.extract_text()
                 encontradas = re.findall(r'\d[°º]\s*(?:ANO|ano)\s*[A-Z]?', texto, re.IGNORECASE)
                 for t in encontradas:
                     tc = t.replace('\n', ' ').strip().upper()
-                    if tc not in turmas: 
-                        turmas.append(tc)
+                    if tc not in turmas: turmas.append(tc)
 
             for idxd, table in enumerate(tables):
-                if idxd >= 5: 
-                    break 
+                if idxd >= 5: break 
                 dia_nome = dias[idxd]
                 start_row = 1 if (idxd == 0 and len(table) > 0 and any("ANO" in str(c).upper() for c in table[0])) else 0
                 aula_num = 1
-                
                 for row in table[start_row:]:
                     row_clean = [str(c).replace('\n', ' ').strip() if c else "" for c in row]
-                    if not any("(" in c for c in row_clean): 
-                        continue
-                        
+                    if not any("(" in c for c in row_clean): continue
                     for col_idx in range(1, len(row_clean)):
                         if col_idx - 1 < len(turmas):
                             celula = row_clean[col_idx]
@@ -128,23 +113,21 @@ def extrair_dados_pdf(pdf_file, turno, data_inicio_str, num_versao):
                                     turma_atual = formatar_nome_turma(turmas[col_idx - 1], disc)
                                     sala, pav = mapear_sala_pavilhao(turma_atual, turno)
                                     duracao = "0:50" if aula_num in [1, 3] else "0:45"
-                                    
                                     dados.append([turno, prof, dia_nome, f"{aula_num}ª Aula", turma_atual, disc, f"S{sala}", pav, duracao, data_inicio_str, "Em Aberto", f"V{num_versao}"])
                     aula_num += 1
     return dados
 
 # ==============================================================================
-# CONEXÃO COM GOOGLE SHEETS
+# CONEXÃO GOOGLE SHEETS (SEM CACHE PARA EVITAR ERROS DE SESSÃO)
 # ==============================================================================
 def get_client():
     creds = service_account.Credentials.from_service_account_info(st.secrets["google_credentials"], scopes=["https://www.googleapis.com/auth/spreadsheets"])
     return gspread.authorize(creds)
 
-@st.cache_data(ttl=5) 
+# Removido o st.cache_data para evitar o bug de 'AuthorizedSession'
 def obter_estado_sistema():
     client = get_client()
     planilha = client.open_by_key(ID_PLANILHA_MASTER)
-    
     estado = {"mat": {"versao": 1, "inicio": "--/--/----"}, "vesp": {"versao": 1, "inicio": "--/--/----"}}
     aba_ativa = None
     nome_aba_ativa = ""
@@ -164,10 +147,8 @@ def obter_estado_sistema():
             if len(linha) >= 12:
                 turno = str(linha[0]).upper()
                 versao_num = int(re.sub(r'\D', '', str(linha[11])) or 1)
-                if turno == "MATUTINO": 
-                    estado["mat"] = {"versao": versao_num, "inicio": linha[9]}
-                elif turno == "VESPERTINO": 
-                    estado["vesp"] = {"versao": versao_num, "inicio": linha[9]}
+                if turno == "MATUTINO": estado["mat"] = {"versao": versao_num, "inicio": linha[9]}
+                elif turno == "VESPERTINO": estado["vesp"] = {"versao": versao_num, "inicio": linha[9]}
                     
     return estado, aba_ativa, nome_aba_ativa, sorted(abas_historico)
 
@@ -188,18 +169,15 @@ with st.expander("🗑️ Lixeira: Apagar Históricos Antigos", expanded=False):
         client = get_client()
         plan = client.open_by_key(ID_PLANILHA_MASTER)
         for nome_aba in abas_para_apagar:
-            try: 
-                plan.del_worksheet(plan.worksheet(nome_aba))
-            except Exception: 
-                pass
-        st.cache_data.clear()
+            try: plan.del_worksheet(plan.worksheet(nome_aba))
+            except Exception: pass
         st.rerun()
 
 st.markdown("<div class='mode-box'>", unsafe_allow_html=True)
 modo_operacao = st.radio(
     "👉 Selecione o Modo:", 
     options=[
-        "📌 MODO VÁLIDO (Arquiva o antigo adicionando a data final no nome da aba e avança a versão oficial)",
+        "📌 MODO VÁLIDO (Arquiva o antigo e avança a versão oficial)",
         "🧪 MODO TESTE (Substitui a grade atual, mas NÃO cria histórico)"
     ], 
     index=0
@@ -211,7 +189,6 @@ with col1:
     st.markdown(f"<div class='card'><h4>☀️ Matutino (Atual: V{estado_atual['mat']['versao']})</h4>", unsafe_allow_html=True)
     pdf_mat = st.file_uploader("PDF Matutino:", type="pdf")
     
-    # O Hack de Forçar Atualização do Calendário ao enviar PDF
     if pdf_mat and st.session_state.last_mat != pdf_mat.name:
         st.session_state.last_mat = pdf_mat.name
         st.session_state.dm = calcular_sugestao_datas(pdf_mat.name)
@@ -242,7 +219,6 @@ if st.button("🚀 INJETAR DADOS NO SISTEMA"):
         str_data_mat = data_mat.strftime("%d/%m/%Y")
         str_data_vesp = data_vesp.strftime("%d/%m/%Y")
         
-        # Formato exato do arquivo (dd_mm_yy)
         data_base_str = data_mat.strftime("%d_%m_%y") if pdf_mat else data_vesp.strftime("%d_%m_%y")
         fim_calc = calcular_sexta_anterior(data_mat) if pdf_mat else calcular_sexta_anterior(data_vesp)
         data_fim_str = fim_calc.strftime("%d_%m_%y")
@@ -257,18 +233,17 @@ if st.button("🚀 INJETAR DADOS NO SISTEMA"):
                 if resetar:
                     for a in plan.worksheets():
                         if str(a.title).startswith("V") or str(a.title).startswith("HV") or str(a.title) == "BASE_DADOS_BRUTA":
-                            try: 
-                                plan.del_worksheet(a)
-                            except Exception: 
-                                pass
+                            try: plan.del_worksheet(a)
+                            except Exception: pass
                     nome_novo = f"V01_{data_base_str}_a"
                     aba_bruta = plan.add_worksheet(title=nome_novo, rows=3000, cols=12)
+                    aba_bruta.hide() # <-- COMANDO PARA OCULTAR A ABA IMEDIATAMENTE
                     dados_antigos = []
-                    v_mat_nova = 1
-                    v_vesp_nova = 1
+                    v_mat_nova = 1; v_vesp_nova = 1
                 else:
                     if aba_ativa is None: 
                         aba_bruta = plan.add_worksheet(title=f"V01_{data_base_str}_a", rows=3000, cols=12)
+                        aba_bruta.hide()
                         dados_antigos = []
                     else: 
                         aba_bruta = aba_ativa
@@ -281,23 +256,20 @@ if st.button("🚀 INJETAR DADOS NO SISTEMA"):
                         nome_novo = f"V{v_global:02d}_{data_base_str}_a"
                         
                         if len(dados_antigos) > 1:
-                            # ATUALIZA O NOME DA ABA SEGUINDO A SUA REGRA EXATA: V01_23_02_26_a_27_02_26
                             nome_fechado = f"{nome_aba_ativa}_{data_fim_str}"
-                            
                             for idx, linha in enumerate(dados_antigos[1:]):
-                                while len(linha) < 12: 
-                                    linha.append("")
+                                while len(linha) < 12: linha.append("")
                                 t = str(linha[0]).upper()
-                                if t == "MATUTINO" and pdf_mat: 
-                                    linha[10] = fim_calc.strftime("%d/%m/%Y")
-                                if t == "VESPERTINO" and pdf_vesp: 
-                                    linha[10] = fim_calc.strftime("%d/%m/%Y")
+                                if t == "MATUTINO" and pdf_mat: linha[10] = fim_calc.strftime("%d/%m/%Y")
+                                if t == "VESPERTINO" and pdf_vesp: linha[10] = fim_calc.strftime("%d/%m/%Y")
                                 dados_antigos[idx+1] = linha
                                 
                             aba_bruta.update_title(nome_fechado)
                             aba_bruta.update(range_name='A1', values=dados_antigos)
+                            aba_bruta.hide() # Esconde o histórico
                             
                             aba_bruta = plan.add_worksheet(title=nome_novo, rows=3000, cols=12)
+                            aba_bruta.hide() # Esconde a aba nova
                     else:
                         v_mat_nova = estado_atual['mat']['versao']
                         v_vesp_nova = estado_atual['vesp']['versao']
@@ -306,13 +278,10 @@ if st.button("🚀 INJETAR DADOS NO SISTEMA"):
                 dados_preservados = []
                 if len(dados_antigos) > 1:
                     for linha in dados_antigos[1:]: 
-                        while len(linha) < 12: 
-                            linha.append("")
+                        while len(linha) < 12: linha.append("")
                         t = str(linha[0]).upper()
-                        if t == "MATUTINO" and not pdf_mat: 
-                            dados_preservados.append(linha)
-                        if t == "VESPERTINO" and not pdf_vesp: 
-                            dados_preservados.append(linha)
+                        if t == "MATUTINO" and not pdf_mat: dados_preservados.append(linha)
+                        if t == "VESPERTINO" and not pdf_vesp: dados_preservados.append(linha)
 
                 dados_novos_mat = extrair_dados_pdf(pdf_mat, "MATUTINO", str_data_mat, v_mat_nova) if pdf_mat else []
                 dados_novos_vesp = extrair_dados_pdf(pdf_vesp, "VESPERTINO", str_data_vesp, v_vesp_nova) if pdf_vesp else []
@@ -323,17 +292,12 @@ if st.button("🚀 INJETAR DADOS NO SISTEMA"):
                 aba_bruta.clear()
                 aba_bruta.update(range_name='A1', values=dados_finais)
                 
-                st.cache_data.clear()
-                
-                # MENSAGENS BLINDADAS CONTRA ERRO DE VARIÁVEL
                 if resetar:
-                    st.success(f"✅ VIRADA DE ANO CONCLUÍDA! Base totalmente limpa e aba {nome_novo} criada.")
+                    st.success(f"✅ VIRADA DE ANO CONCLUÍDA! Base totalmente limpa e aba {nome_novo} criada (Oculta).")
                     st.balloons()
                 elif is_valido: 
-                    if nome_fechado:
-                        st.success(f"✅ SUCESSO! A Versão Antiga foi encerrada ({nome_fechado}). A aba {nome_novo} foi criada!")
-                    else:
-                        st.success(f"✅ SUCESSO! A aba {nome_novo} foi criada!")
+                    if nome_fechado: st.success(f"✅ SUCESSO! A Versão Antiga foi encerrada ({nome_fechado}). A aba {nome_novo} foi criada!")
+                    else: st.success(f"✅ SUCESSO! A aba {nome_novo} foi criada (Oculta).")
                     st.balloons()
                 else: 
                     st.info("🧪 TESTE CONCLUÍDO! Substituição feita sem gerar histórico.")
