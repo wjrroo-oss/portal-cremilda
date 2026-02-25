@@ -6,9 +6,15 @@ import re
 from datetime import datetime, timedelta
 
 # ==============================================================================
-# CONFIGURAÇÃO DE ACESSO
+# CONFIGURAÇÃO DE ACESSO E MEMÓRIA (O SEGREDO DA DATA)
 # ==============================================================================
 ID_PLANILHA_MASTER = "1XtIoPk-BL7egviMXJy-qrb0NB--EM7X-l-emusS1f24"
+
+# Inicia a memória do calendário para forçar a mudança automática
+if "dm" not in st.session_state: st.session_state.dm = datetime.today().date()
+if "dv" not in st.session_state: st.session_state.dv = datetime.today().date()
+if "last_mat" not in st.session_state: st.session_state.last_mat = ""
+if "last_vesp" not in st.session_state: st.session_state.last_vesp = ""
 
 st.set_page_config(page_title="Portal Cremilda", page_icon="🏫", layout="wide")
 st.markdown("""
@@ -28,8 +34,11 @@ st.markdown("""
 st.markdown("<h1>🏫 Gestor de Horários - Cremilda</h1>", unsafe_allow_html=True)
 st.markdown("<div class='subtitle'>Versionamento Semântico e Vigência Automática</div>", unsafe_allow_html=True)
 
+# ==============================================================================
+# CÉREBRO DAS DATAS
+# ==============================================================================
 def calcular_sugestao_datas(nome_arquivo):
-    matches = re.findall(r'(?<!\d)(\d{2})[\s\-\.]+(\d{2})(?!\d)', nome_arquivo)
+    matches = re.findall(r'\b(\d{2})[\s\-\.]+(\d{2})\b', nome_arquivo)
     hoje = datetime.now()
     for match in matches:
         dia_str, mes_str = match
@@ -38,11 +47,9 @@ def calcular_sugestao_datas(nome_arquivo):
             criacao = datetime.strptime(f"{dia_str}/{mes_str}/{ano}", "%d/%m/%Y")
             dias_para_segunda = (7 - criacao.weekday()) % 7
             if dias_para_segunda == 0: dias_para_segunda = 7
-            inicio_vigencia = criacao + timedelta(days=dias_para_segunda)
-            return inicio_vigencia.date()
+            return (criacao + timedelta(days=dias_para_segunda)).date()
         except: continue
-    prox_seg = hoje + timedelta(days=(7 - hoje.weekday()))
-    return prox_seg.date()
+    return (hoje + timedelta(days=(7 - hoje.weekday()))).date()
 
 def calcular_sexta_anterior(data_inicio):
     return data_inicio - timedelta(days=3)
@@ -139,40 +146,52 @@ with st.expander("🗑️ Lixeira: Apagar Históricos Antigos", expanded=False):
         st.cache_data.clear(); st.rerun()
 
 st.markdown("<div class='mode-box'>", unsafe_allow_html=True)
-modo_operacao = st.radio("👉 Selecione o Modo:", options=["🧪 MODO TESTE (Substitui e atualiza grade, mas NÃO cria histórico)", "📌 MODO VÁLIDO (Arquiva o antigo calculando a data final e avança a versão oficial)"], index=0)
+modo_operacao = st.radio("👉 Selecione o Modo:", options=["🧪 MODO TESTE (Substitui a grade atual, mas NÃO cria histórico)", "📌 MODO VÁLIDO (Arquiva o antigo adicionando a data final no nome da aba e avança a versão oficial)"], index=0)
 st.markdown("</div>", unsafe_allow_html=True)
 
+# ==============================================================================
+# PAINEL COM A MEMÓRIA CORRIGIDA
+# ==============================================================================
 col1, col2 = st.columns(2)
 with col1: 
     st.markdown(f"<div class='card'><h4>☀️ Matutino (Atual: V{estado_atual['mat']['versao']})</h4>", unsafe_allow_html=True)
-    pdf_mat = st.file_uploader("PDF Matutino:", type="pdf", key="up_mat")
-    ini_m = calcular_sugestao_datas(pdf_mat.name) if pdf_mat else datetime.today().date()
-    data_mat = st.date_input("📅 Início da Vigência (Seg):", value=ini_m, format="DD/MM/YYYY", key="dm")
+    pdf_mat = st.file_uploader("PDF Matutino:", type="pdf")
+    
+    # O Hack de Forçar Atualização do Calendário ao enviar PDF
+    if pdf_mat and st.session_state.last_mat != pdf_mat.name:
+        st.session_state.last_mat = pdf_mat.name
+        st.session_state.dm = calcular_sugestao_datas(pdf_mat.name)
+        
+    data_mat = st.date_input("📅 Início da Vigência (Seg):", format="DD/MM/YYYY", key="dm")
     st.markdown("</div>", unsafe_allow_html=True)
 
 with col2: 
     st.markdown(f"<div class='card card-orange'><h4>🌇 Vespertino (Atual: V{estado_atual['vesp']['versao']})</h4>", unsafe_allow_html=True)
-    pdf_vesp = st.file_uploader("PDF Vespertino:", type="pdf", key="up_vesp")
-    ini_v = calcular_sugestao_datas(pdf_vesp.name) if pdf_vesp else datetime.today().date()
-    data_vesp = st.date_input("📅 Início da Vigência (Seg):", value=ini_v, format="DD/MM/YYYY", key="dv")
+    pdf_vesp = st.file_uploader("PDF Vespertino:", type="pdf")
+    
+    if pdf_vesp and st.session_state.last_vesp != pdf_vesp.name:
+        st.session_state.last_vesp = pdf_vesp.name
+        st.session_state.dv = calcular_sugestao_datas(pdf_vesp.name)
+        
+    data_vesp = st.date_input("📅 Início da Vigência (Seg):", format="DD/MM/YYYY", key="dv")
     st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("<div class='danger-zone'>", unsafe_allow_html=True)
 resetar = st.checkbox("⚠️ MODO VIRADA DE ANO: Apagar TUDO e começar na V01_DD_MM_YY_a")
 st.markdown("</div>", unsafe_allow_html=True)
 
-if st.button("🚀 INJETAR DADOS"):
+if st.button("🚀 INJETAR DADOS NO SISTEMA"):
     if not pdf_mat and not pdf_vesp and not resetar: st.warning("Selecione um PDF.")
     else:
         is_valido = "VÁLIDO" in modo_operacao
         str_data_mat = data_mat.strftime("%d/%m/%Y"); str_data_vesp = data_vesp.strftime("%d/%m/%Y")
         
-        # A MÁGICA DA NOMENCLATURA: dd_mm_yy
+        # Formato exato do arquivo
         data_base_str = data_mat.strftime("%d_%m_%y") if pdf_mat else data_vesp.strftime("%d_%m_%y")
         fim_calc = calcular_sexta_anterior(data_mat) if pdf_mat else calcular_sexta_anterior(data_vesp)
         data_fim_str = fim_calc.strftime("%d_%m_%y")
 
-        with st.spinner("Processando..."):
+        with st.spinner("Processando Inteligência de Versões..."):
             try:
                 client = get_client(); plan = client.open_by_key(ID_PLANILHA_MASTER)
                 
@@ -194,7 +213,7 @@ if st.button("🚀 INJETAR DADOS"):
                         v_global = max(v_mat_nova, v_vesp_nova)
                         
                         if len(dados_antigos) > 1:
-                            # ATUALIZA O NOME DO ARQUIVO VELHO CONFORME SOLICITADO
+                            # ATUALIZA O NOME DA ABA SEGUINDO A SUA REGRA EXATA: V01_23_02_26_a_27_02_26
                             nome_fechado = f"{nome_aba_ativa}_{data_fim_str}"
                             
                             for idx, linha in enumerate(dados_antigos[1:]):
@@ -230,6 +249,6 @@ if st.button("🚀 INJETAR DADOS"):
                 aba_bruta.update(range_name='A1', values=dados_finais)
                 
                 st.cache_data.clear()
-                if is_valido: st.success(f"✅ SUCESSO! A Versão Antiga foi encerrada e a aba {nome_novo} foi criada!")
+                if is_valido: st.success(f"✅ SUCESSO! A Versão Antiga foi encerrada ({nome_fechado}). A aba {nome_novo} foi criada!")
                 else: st.info("🧪 TESTE CONCLUÍDO! Substituído sem gerar histórico.")
             except Exception as e: st.error(f"Erro: {e}")
