@@ -6,19 +6,15 @@ import re
 from datetime import datetime, timedelta
 
 # ==============================================================================
-# CONFIGURAÇÃO DE ACESSO E MEMÓRIA (O SEGREDO DA DATA)
+# CONFIGURAÇÃO DE ACESSO E MEMÓRIA
 # ==============================================================================
 ID_PLANILHA_MASTER = "1XtIoPk-BL7egviMXJy-qrb0NB--EM7X-l-emusS1f24"
 
 # Inicia a memória do calendário para forçar a mudança automática
-if "dm" not in st.session_state: 
-    st.session_state.dm = datetime.today().date()
-if "dv" not in st.session_state: 
-    st.session_state.dv = datetime.today().date()
-if "last_mat" not in st.session_state: 
-    st.session_state.last_mat = ""
-if "last_vesp" not in st.session_state: 
-    st.session_state.last_vesp = ""
+if "dm" not in st.session_state: st.session_state.dm = datetime.today().date()
+if "dv" not in st.session_state: st.session_state.dv = datetime.today().date()
+if "last_mat" not in st.session_state: st.session_state.last_mat = ""
+if "last_vesp" not in st.session_state: st.session_state.last_vesp = ""
 
 st.set_page_config(page_title="Portal Cremilda", page_icon="🏫", layout="wide")
 st.markdown("""
@@ -203,8 +199,8 @@ st.markdown("<div class='mode-box'>", unsafe_allow_html=True)
 modo_operacao = st.radio(
     "👉 Selecione o Modo:", 
     options=[
-        "🧪 MODO TESTE (Substitui a grade atual, mas NÃO cria histórico)", 
-        "📌 MODO VÁLIDO (Arquiva o antigo adicionando a data final no nome da aba e avança a versão oficial)"
+        "📌 MODO VÁLIDO (Arquiva o antigo adicionando a data final no nome da aba e avança a versão oficial)",
+        "🧪 MODO TESTE (Substitui a grade atual, mas NÃO cria histórico)"
     ], 
     index=0
 )
@@ -220,7 +216,7 @@ with col1:
         st.session_state.last_mat = pdf_mat.name
         st.session_state.dm = calcular_sugestao_datas(pdf_mat.name)
         
-    data_mat = st.date_input("📅 Início da Vigência (Seg):", format="DD/MM/YYYY", key="dm")
+    data_mat = st.date_input("📅 Início da Vigência (Seg):", value=st.session_state.dm, format="DD/MM/YYYY", key="dm")
     st.markdown("</div>", unsafe_allow_html=True)
 
 with col2: 
@@ -231,7 +227,7 @@ with col2:
         st.session_state.last_vesp = pdf_vesp.name
         st.session_state.dv = calcular_sugestao_datas(pdf_vesp.name)
         
-    data_vesp = st.date_input("📅 Início da Vigência (Seg):", format="DD/MM/YYYY", key="dv")
+    data_vesp = st.date_input("📅 Início da Vigência (Seg):", value=st.session_state.dv, format="DD/MM/YYYY", key="dv")
     st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("<div class='danger-zone'>", unsafe_allow_html=True)
@@ -250,6 +246,8 @@ if st.button("🚀 INJETAR DADOS NO SISTEMA"):
         data_base_str = data_mat.strftime("%d_%m_%y") if pdf_mat else data_vesp.strftime("%d_%m_%y")
         fim_calc = calcular_sexta_anterior(data_mat) if pdf_mat else calcular_sexta_anterior(data_vesp)
         data_fim_str = fim_calc.strftime("%d_%m_%y")
+        
+        nome_fechado = ""
 
         with st.spinner("Processando Inteligência de Versões..."):
             try:
@@ -280,7 +278,7 @@ if st.button("🚀 INJETAR DADOS NO SISTEMA"):
                         v_mat_nova = estado_atual['mat']['versao'] + 1 if pdf_mat else estado_atual['mat']['versao']
                         v_vesp_nova = estado_atual['vesp']['versao'] + 1 if pdf_vesp else estado_atual['vesp']['versao']
                         v_global = max(v_mat_nova, v_vesp_nova)
-                        nome_novo = nome_aba_ativa
+                        nome_novo = f"V{v_global:02d}_{data_base_str}_a"
                         
                         if len(dados_antigos) > 1:
                             # ATUALIZA O NOME DA ABA SEGUINDO A SUA REGRA EXATA: V01_23_02_26_a_27_02_26
@@ -299,7 +297,6 @@ if st.button("🚀 INJETAR DADOS NO SISTEMA"):
                             aba_bruta.update_title(nome_fechado)
                             aba_bruta.update(range_name='A1', values=dados_antigos)
                             
-                            nome_novo = f"V{v_global:02d}_{data_base_str}_a"
                             aba_bruta = plan.add_worksheet(title=nome_novo, rows=3000, cols=12)
                     else:
                         v_mat_nova = estado_atual['mat']['versao']
@@ -327,9 +324,18 @@ if st.button("🚀 INJETAR DADOS NO SISTEMA"):
                 aba_bruta.update(range_name='A1', values=dados_finais)
                 
                 st.cache_data.clear()
-                if is_valido: 
-                    st.success(f"✅ SUCESSO! A Versão Antiga foi encerrada ({nome_fechado}). A aba {nome_novo} foi criada!")
+                
+                # MENSAGENS BLINDADAS CONTRA ERRO DE VARIÁVEL
+                if resetar:
+                    st.success(f"✅ VIRADA DE ANO CONCLUÍDA! Base totalmente limpa e aba {nome_novo} criada.")
+                    st.balloons()
+                elif is_valido: 
+                    if nome_fechado:
+                        st.success(f"✅ SUCESSO! A Versão Antiga foi encerrada ({nome_fechado}). A aba {nome_novo} foi criada!")
+                    else:
+                        st.success(f"✅ SUCESSO! A aba {nome_novo} foi criada!")
+                    st.balloons()
                 else: 
-                    st.info("🧪 TESTE CONCLUÍDO! Substituído sem gerar histórico.")
+                    st.info("🧪 TESTE CONCLUÍDO! Substituição feita sem gerar histórico.")
             except Exception as e: 
-                st.error(f"Erro Crítico: {e}")
+                st.error(f"Erro Crítico durante o processo: {e}")
