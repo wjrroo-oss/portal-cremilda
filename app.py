@@ -1,264 +1,199 @@
 import streamlit as st
-import pdfplumber
-from google.oauth2 import service_account
-import gspread
-import re
-from datetime import datetime, timedelta
+import pandas as pd
+from datetime import datetime, date
+import sqlite3
+import os
 
-# ==============================================================================
-# CONFIGURAÇÃO DE ACESSO
-# ==============================================================================
-ID_PLANILHA_MASTER = "1XtIoPk-BL7egviMXJy-qrb0NB--EM7X-l-emusS1f24"
+# ==========================================
+# 1. CONFIGURAÇÕES INICIAIS E BANCO DE DADOS
+# ==========================================
+st.set_page_config(page_title="Dashboard Escolar", layout="wide")
 
-if "dm" not in st.session_state: st.session_state.dm = datetime.today().date()
-if "dv" not in st.session_state: st.session_state.dv = datetime.today().date()
-if "last_mat" not in st.session_state: st.session_state.last_mat = ""
-if "last_vesp" not in st.session_state: st.session_state.last_vesp = ""
+# Criar pasta para salvar os uploads (Mural e Avisos)
+UPLOAD_DIR = "uploads"
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
 
-st.set_page_config(page_title="Portal Cremilda", page_icon="🏫", layout="wide")
-st.markdown("""
-    <style>
-        .stApp { background-color: #f8fafc; font-family: 'Segoe UI', Tahoma, sans-serif; }
-        .block-container { padding-top: 2rem; max-width: 1050px;}
-        h1 { color: #0f172a; font-weight: 800; text-align: center; font-size: 2.2rem;}
-        .subtitle { text-align: center; color: #64748b; font-size: 1.1rem; margin-bottom: 2rem; }
-        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border-top: 4px solid #3b82f6; margin-bottom: 20px;}
-        .card-orange { border-top-color: #f59e0b; }
-        .mode-box { background: #f0fdf4; border: 2px solid #22c55e; padding: 15px; border-radius: 10px; margin-bottom: 20px;}
-        .danger-zone { border: 1px solid #fecaca; padding: 15px; border-radius: 8px; background-color: #fef2f2; margin-top: 10px;}
-        .stButton>button { background-color: #2563eb; color: white; border-radius: 8px; font-weight: 700; width: 100%; padding: 0.8rem; font-size: 1.1rem; transition: 0.3s;}
-    </style>
-""", unsafe_allow_html=True)
+# Conexão com o banco de dados SQLite (cria o arquivo se não existir)
+conn = sqlite3.connect('escola_dados.db', check_same_thread=False)
+c = conn.cursor()
 
-st.markdown("<h1>🏫 Gestor de Horários - Cremilda</h1>", unsafe_allow_html=True)
-st.markdown("<div class='subtitle'>Versionamento Semântico e Vigência Automática</div>", unsafe_allow_html=True)
+# Criação das tabelas para cruzar dados e evitar duplicidades
+c.execute('''
+    CREATE TABLE IF NOT EXISTS eventos_extras (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        data_evento DATE,
+        tipo TEXT,
+        descricao TEXT,
+        arquivo_path TEXT,
+        UNIQUE(data_evento, descricao) -- Evita duplicar o mesmo evento na mesma data
+    )
+''')
+c.execute('''
+    CREATE TABLE IF NOT EXISTS avisos_gerais (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        data_aviso DATE,
+        titulo TEXT,
+        texto TEXT,
+        link TEXT,
+        arquivo_path TEXT,
+        UNIQUE(data_aviso, titulo)
+    )
+''')
+conn.commit()
 
-# ==============================================================================
-# CÉREBRO DAS DATAS
-# ==============================================================================
-def calcular_sugestao_datas(nome_arquivo):
-    matches = re.findall(r'(?<!\d)(\d{2})[\s\-\.]+(\d{2})(?!\d)', nome_arquivo)
-    hoje = datetime.now()
-    for match in matches:
-        dia_str, mes_str = match
-        ano = hoje.year
-        try:
-            criacao = datetime.strptime(f"{dia_str}/{mes_str}/{ano}", "%d/%m/%Y")
-            dias_para_segunda = (7 - criacao.weekday()) % 7
-            if dias_para_segunda == 0: dias_para_segunda = 7
-            return (criacao + timedelta(days=dias_para_segunda)).date()
-        except ValueError: continue
-    return (hoje + timedelta(days=(7 - hoje.weekday()))).date()
+# Função auxiliar para salvar arquivos upados
+def salvar_arquivo(uploaded_file, subpasta):
+    if uploaded_file is not None:
+        caminho_completo = os.path.join(UPLOAD_DIR, f"{subpasta}_{uploaded_file.name}")
+        with open(caminho_completo, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        return caminho_completo
+    return None
 
-def calcular_sexta_anterior(data_inicio):
-    return data_inicio - timedelta(days=3)
+# ==========================================
+# 2. MENU LATERAL (NAVEGAÇÃO)
+# ==========================================
+st.sidebar.title("Navegação")
+menu = st.sidebar.radio("Ir para:", 
+    ["Diário de Bordo (Home)", "Uploads Urânia e Extras", "Avisos Gerais"]
+)
 
-def formatar_nome_turma(turma_suja, disciplina):
-    t_limpa = turma_suja.upper().replace(" ", "").replace("º", "").replace("°", "").replace("ANO", "")
-    serie_match = re.search(r'\d', t_limpa)
-    letra_match = re.search(r'[A-Z]$', t_limpa)
-    nome_final = turma_suja
-    if serie_match and letra_match: nome_final = f"{serie_match.group(0)}º ANO {letra_match.group(0)}"
-    if nome_final == "2º ANO D":
-        disc_up = str(disciplina).upper()
-        if "LETR" in disc_up: nome_final = "2º ANO D (Let)"
-        elif "APROF" in disc_up: nome_final = "2º ANO D (Aprof)"
-    return nome_final
-
-def mapear_sala_pavilhao(turma, turno):
-    t = turma.upper().replace(" ", "").replace("º", "").replace("°", "").replace("ANO", "")
-    if turno == "MATUTINO": mapa = {'6A': ('13', 'P1E2'), '6B': ('14', 'P1E2'), '7A': ('15', 'P1E2'), '7B': ('16', 'P1E2'), '8A': ('17', 'P1E2'), '8B': ('18', 'P1E2'), '9A': ('19', 'P1E2'), '9B': ('06', 'P1E2'), '1A': ('01', 'P1E2'), '1B': ('20', 'P1E2'), '1C': ('04', 'P1E2'), '1D': ('05', 'P1E2'), '2A': ('21', 'P1E2'), '2B': ('22', 'P1E2'), '2C': ('23', 'P1E2'), '2D': ('24', 'P1E2'), '3A': ('08', 'P1E2'), '3B': ('09', 'P1E2'), '3C': ('10', 'P1E2'), '3D': ('11', 'P1E2'), '3E': ('12', 'P1E2')}
-    else: mapa = {'6C': ('13', 'P2'), '6D': ('14', 'P2'), '6E': ('15', 'P2'), '6F': ('16', 'P2'), '6G': ('17', 'P2'), '7C': ('19', 'P2'), '7D': ('18', 'P2'), '7E': ('20', 'P2'), '7F': ('21', 'P2'), '8C': ('01', 'P2'), '8D': ('04', 'P2'), '8E': ('22', 'P2'), '8F': ('23', 'P2'), '8G': ('24', 'P2'), '9C': ('05', 'P1'), '9D': ('08', 'P1'), '9E': ('09', 'P1'), '9F': ('06', 'P1'), '1E': ('10', 'P1'), '1F': ('11', 'P1'), '2E': ('12', 'P1')}
-    return mapa.get(t, ('00', 'P?'))
-
-def extrair_dados_pdf(pdf_file, turno, data_inicio_str, num_versao):
-    dados = []; dias = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"]
-    with pdfplumber.open(pdf_file) as pdf:
-        for page in pdf.pages:
-            tables = page.extract_tables()
-            if not tables: continue
-            turmas = []
-            if len(tables[0]) > 0:
-                for c in tables[0][0]:
-                    if c and "ANO" in str(c).upper(): turmas.append(str(c).replace('\n', ' ').strip().upper())
-            if not turmas:
-                texto = page.extract_text()
-                encontradas = re.findall(r'\d[°º]\s*(?:ANO|ano)\s*[A-Z]?', texto, re.IGNORECASE)
-                for t in encontradas:
-                    tc = t.replace('\n', ' ').strip().upper()
-                    if tc not in turmas: turmas.append(tc)
-
-            for idxd, table in enumerate(tables):
-                if idxd >= 5: break 
-                dia_nome = dias[idxd]
-                start_row = 1 if (idxd == 0 and len(table) > 0 and any("ANO" in str(c).upper() for c in table[0])) else 0
-                aula_num = 1
-                for row in table[start_row:]:
-                    row_clean = [str(c).replace('\n', ' ').strip() if c else "" for c in row]
-                    if not any("(" in c for c in row_clean): continue
-                    for col_idx in range(1, len(row_clean)):
-                        if col_idx - 1 < len(turmas):
-                            celula = row_clean[col_idx]
-                            if "(" in celula and ")" in celula:
-                                match = re.match(r'^(.*?)\s*\((.*?)\)$', celula)
-                                if match:
-                                    disc = match.group(1).strip(); prof = match.group(2).strip().title()
-                                    turma_atual = formatar_nome_turma(turmas[col_idx - 1], disc)
-                                    sala, pav = mapear_sala_pavilhao(turma_atual, turno)
-                                    duracao = "0:50" if aula_num in [1, 3] else "0:45"
-                                    dados.append([turno, prof, dia_nome, f"{aula_num}ª Aula", turma_atual, disc, f"S{sala}", pav, duracao, data_inicio_str, "Em Aberto", f"V{num_versao}"])
-                    aula_num += 1
-    return dados
-
-# ==============================================================================
-# CONEXÃO BLINDADA (SEM CACHE DE SESSÃO)
-# ==============================================================================
-def get_client():
-    creds = service_account.Credentials.from_service_account_info(st.secrets["google_credentials"], scopes=["https://www.googleapis.com/auth/spreadsheets"])
-    return gspread.authorize(creds)
-
-@st.cache_data(ttl=10) # Guarda SÓ dados puros (texto) para não crashar a sessão
-def obter_estado_sistema():
-    client = get_client(); planilha = client.open_by_key(ID_PLANILHA_MASTER)
-    estado = {"mat": {"versao": 1, "inicio": "--/--/----"}, "vesp": {"versao": 1, "inicio": "--/--/----"}}
-    nome_aba_ativa = ""; abas_historico = []
+# ==========================================
+# 3. TELA: UPLOADS URÂNIA E EVENTOS EXTRAS
+# ==========================================
+if menu == "Uploads Urânia e Extras":
+    st.header("Uploads de Horários e Eventos Extras")
     
-    for aba in planilha.worksheets():
-        titulo = str(aba.title)
-        if titulo.endswith("_a") or titulo == "BASE_DADOS_BRUTA": 
-            nome_aba_ativa = titulo
-            dados = aba.get_all_values()
-            for linha in dados[1:]:
-                if len(linha) >= 12:
-                    turno = str(linha[0]).upper(); versao_num = int(re.sub(r'\D', '', str(linha[11])) or 1)
-                    if turno == "MATUTINO": estado["mat"] = {"versao": versao_num, "inicio": linha[9]}
-                    elif turno == "VESPERTINO": estado["vesp"] = {"versao": versao_num, "inicio": linha[9]}
-        elif titulo.startswith("V") or titulo.startswith("HV"): 
-            abas_historico.append(titulo)
-            
-    return estado, nome_aba_ativa, sorted(abas_historico)
-
-try: estado_atual, nome_aba_ativa, abas_historico = obter_estado_sistema()
-except Exception as e: estado_atual = {"mat": {"versao": 1, "inicio": "-"}, "vesp": {"versao": 1, "inicio": "-"}}; nome_aba_ativa = "V01_02_02_26_a"; abas_historico = []
-
-with st.expander("🗑️ Lixeira: Apagar Históricos Antigos", expanded=False):
-    abas_para_apagar = st.multiselect("Selecione as versões:", abas_historico)
-    if st.button("Apagar Selecionadas"):
-        client = get_client(); plan = client.open_by_key(ID_PLANILHA_MASTER)
-        for nome_aba in abas_para_apagar:
-            try: plan.del_worksheet(plan.worksheet(nome_aba))
-            except Exception: pass
-        st.cache_data.clear(); st.rerun()
-
-st.markdown("<div class='mode-box'>", unsafe_allow_html=True)
-modo_operacao = st.radio("👉 Selecione o Modo:", options=["📌 MODO VÁLIDO (Arquiva o antigo adicionando a data final no nome da aba e avança a versão oficial)", "🧪 MODO TESTE (Substitui a grade atual, mas NÃO cria histórico)"], index=0)
-st.markdown("</div>", unsafe_allow_html=True)
-
-col1, col2 = st.columns(2)
-with col1: 
-    st.markdown(f"<div class='card'><h4>☀️ Matutino (Atual: V{estado_atual['mat']['versao']})</h4>", unsafe_allow_html=True)
-    pdf_mat = st.file_uploader("PDF Matutino:", type="pdf")
-    if pdf_mat and st.session_state.last_mat != pdf_mat.name:
-        st.session_state.last_mat = pdf_mat.name
-        st.session_state.dm = calcular_sugestao_datas(pdf_mat.name)
-    data_mat = st.date_input("📅 Início da Vigência (Seg):", value=st.session_state.dm, format="DD/MM/YYYY", key="dm")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-with col2: 
-    st.markdown(f"<div class='card card-orange'><h4>🌇 Vespertino (Atual: V{estado_atual['vesp']['versao']})</h4>", unsafe_allow_html=True)
-    pdf_vesp = st.file_uploader("PDF Vespertino:", type="pdf")
-    if pdf_vesp and st.session_state.last_vesp != pdf_vesp.name:
-        st.session_state.last_vesp = pdf_vesp.name
-        st.session_state.dv = calcular_sugestao_datas(pdf_vesp.name)
-    data_vesp = st.date_input("📅 Início da Vigência (Seg):", value=st.session_state.dv, format="DD/MM/YYYY", key="dv")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-st.markdown("<div class='danger-zone'>", unsafe_allow_html=True)
-resetar = st.checkbox("⚠️ MODO VIRADA DE ANO: Apagar TUDO e começar na V01_DD_MM_YY_a")
-st.markdown("</div>", unsafe_allow_html=True)
-
-if st.button("🚀 INJETAR DADOS NO SISTEMA"):
-    if not pdf_mat and not pdf_vesp and not resetar: st.warning("Selecione um PDF.")
-    else:
-        is_valido = "VÁLIDO" in modo_operacao
-        str_data_mat = data_mat.strftime("%d/%m/%Y"); str_data_vesp = data_vesp.strftime("%d/%m/%Y")
+    st.subheader("1. Arquivos do Urânia")
+    col1, col2 = st.columns(2)
+    with col1:
+        urania_mat_geral = st.file_uploader("Urânia - Geral Matutino (PDF)", type=["pdf", "csv", "xlsx"])
+        urania_mat_apa = st.file_uploader("Urânia - APA Matutino (PDF)", type=["pdf", "csv", "xlsx"])
+    with col2:
+        urania_vesp_geral = st.file_uploader("Urânia - Geral Vespertino (PDF)", type=["pdf", "csv", "xlsx"])
+        urania_vesp_apa = st.file_uploader("Urânia - APA Vespertino (PDF)", type=["pdf", "csv", "xlsx"])
         
-        data_base_str = data_mat.strftime("%d_%m_%y") if pdf_mat else data_vesp.strftime("%d_%m_%y")
-        fim_calc = calcular_sexta_anterior(data_mat) if pdf_mat else calcular_sexta_anterior(data_vesp)
-        data_fim_str = fim_calc.strftime("%d_%m_%y")
-        nome_fechado = ""
-
-        with st.spinner("Processando Inteligência de Versões..."):
+    st.write("---")
+    
+    st.subheader("2. Mural de Eventos Extras (Palestras, Aulas Extras)")
+    with st.form("form_eventos_extras"):
+        data_evento = st.date_input("Data do Evento")
+        tipo_evento = st.selectbox("Tipo de Evento", ["Palestra", "Aula Extra", "Reunião de Pais", "Conselho de Classe", "Outros"])
+        desc_evento = st.text_input("Descrição do Evento")
+        arquivo_extra = st.file_uploader("Anexar Arquivo (PDF/Imagem)", type=["pdf", "png", "jpg", "jpeg"])
+        
+        submit_evento = st.form_submit_button("Registrar Evento no Mural")
+        
+        if submit_evento:
+            caminho_arquivo = salvar_arquivo(arquivo_extra, "evento")
             try:
-                client = get_client() # Conexão FRESCA (Evita o erro Auth)
-                plan = client.open_by_key(ID_PLANILHA_MASTER)
+                c.execute("INSERT INTO eventos_extras (data_evento, tipo, descricao, arquivo_path) VALUES (?, ?, ?, ?)",
+                          (data_evento, tipo_evento, desc_evento, caminho_arquivo))
+                conn.commit()
+                st.success("Evento registrado com sucesso no Mural!")
+            except sqlite3.IntegrityError:
+                st.warning("Este evento já está registrado nesta data (Duplicidade evitada).")
+
+# ==========================================
+# 4. TELA: AVISOS GERAIS (DASHBOARD EXTRA)
+# ==========================================
+elif menu == "Avisos Gerais":
+    st.header("Mural de Avisos Gerais")
+    
+    # Formulário para cadastrar novos avisos
+    with st.expander("➕ Adicionar Novo Aviso", expanded=False):
+        with st.form("form_avisos"):
+            data_aviso = st.date_input("Data de Referência/Prazo do Aviso")
+            titulo_aviso = st.text_input("Título do Aviso")
+            texto_aviso = st.text_area("Descrição / Informações")
+            link_aviso = st.text_input("Link de Apoio (opcional)")
+            arquivo_aviso = st.file_uploader("Anexar Arquivo (PDF, Imagens)", type=["pdf", "png", "jpg", "jpeg"])
+            
+            submit_aviso = st.form_submit_button("Publicar Aviso")
+            
+            if submit_aviso:
+                caminho_arq = salvar_arquivo(arquivo_aviso, "aviso")
+                try:
+                    c.execute("INSERT INTO avisos_gerais (data_aviso, titulo, texto, link, arquivo_path) VALUES (?, ?, ?, ?, ?)",
+                              (data_aviso, titulo_aviso, texto_aviso, link_aviso, caminho_arq))
+                    conn.commit()
+                    st.success("Aviso publicado com sucesso!")
+                except sqlite3.IntegrityError:
+                    st.warning("Um aviso com este título já existe para esta data.")
+    
+    st.write("---")
+    
+    # Exibição dos Avisos Filtrados por Data
+    st.subheader("Consultar Avisos")
+    df_avisos = pd.read_sql_query("SELECT * FROM avisos_gerais ORDER BY data_aviso DESC", conn)
+    
+    if not df_avisos.empty:
+        # Pega as datas únicas para o Selectbox (setinhas de seleção)
+        datas_disponiveis = df_avisos['data_aviso'].unique()
+        data_selecionada = st.selectbox("Selecione a Data do Aviso:", datas_disponiveis)
+        
+        # Filtra os avisos pela data selecionada
+        avisos_filtrados = df_avisos[df_avisos['data_aviso'] == data_selecionada]
+        
+        for index, row in avisos_filtrados.iterrows():
+            with st.expander(f"📌 {row['titulo']}"):
+                st.write(f"**Detalhes:** {row['texto']}")
+                if row['link']:
+                    st.markdown(f"[🔗 Link de Acesso]({row['link']})")
+                if row['arquivo_path']:
+                    st.write(f"📁 Arquivo anexado: `{os.path.basename(row['arquivo_path'])}`")
+                    # Em um app real, aqui você usaria st.download_button para o arquivo
+    else:
+        st.info("Nenhum aviso registrado ainda.")
+
+# ==========================================
+# 5. TELA: DIÁRIO DE BORDO (CONTAGEM REGRESSIVA)
+# ==========================================
+elif menu == "Diário de Bordo (Home)":
+    st.header("Diário de Bordo")
+    st.write("Acompanhe aqui os prazos, termos obrigatórios e contagens regressivas para os próximos eventos e avisos.")
+    
+    hoje = date.today()
+    
+    # Buscar Eventos e Avisos futuros
+    df_eventos = pd.read_sql_query(f"SELECT data_evento, tipo, descricao FROM eventos_extras WHERE data_evento >= '{hoje}'", conn)
+    df_avisos_futuros = pd.read_sql_query(f"SELECT data_aviso, titulo, texto FROM avisos_gerais WHERE data_aviso >= '{hoje}'", conn)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("⏳ Contagem Regressiva - Eventos")
+        if not df_eventos.empty:
+            for index, row in df_eventos.iterrows():
+                data_ev = datetime.strptime(row['data_evento'], '%Y-%m-%d').date()
+                dias_faltando = (data_ev - hoje).days
                 
-                if resetar:
-                    for a in plan.worksheets():
-                        if str(a.title).startswith("V") or str(a.title).startswith("HV") or str(a.title) == "BASE_DADOS_BRUTA":
-                            try: plan.del_worksheet(a)
-                            except Exception: pass
-                    nome_novo = f"V01_{data_base_str}_a"
-                    aba_bruta = plan.add_worksheet(title=nome_novo, rows=3000, cols=12)
-                    aba_bruta.hide() # ESCONDE A ABA!
-                    dados_antigos = []; v_mat_nova = 1; v_vesp_nova = 1
+                if dias_faltando == 0:
+                    cor = "red"
+                    texto_dias = "É HOJE!"
+                elif dias_faltando <= 3:
+                    cor = "orange"
+                    texto_dias = f"Faltam {dias_faltando} dias!"
                 else:
-                    try: 
-                        aba_ativa = plan.worksheet(nome_aba_ativa)
-                        dados_antigos = aba_ativa.get_all_values()
-                    except: 
-                        aba_ativa = None
-                        dados_antigos = []
+                    cor = "green"
+                    texto_dias = f"Faltam {dias_faltando} dias"
+                    
+                st.markdown(f"<h4 style='color: {cor};'>{texto_dias}</h4>", unsafe_allow_html=True)
+                st.write(f"**{row['tipo']}**: {row['descricao']} ({data_ev.strftime('%d/%m/%Y')})")
+                st.write("---")
+        else:
+            st.info("Nenhum evento futuro programado.")
 
-                    if aba_ativa is None: 
-                        aba_bruta = plan.add_worksheet(title=f"V01_{data_base_str}_a", rows=3000, cols=12)
-                        aba_bruta.hide() # ESCONDE A ABA!
-                    else: aba_bruta = aba_ativa
-
-                    if is_valido:
-                        v_mat_nova = estado_atual['mat']['versao'] + 1 if pdf_mat else estado_atual['mat']['versao']
-                        v_vesp_nova = estado_atual['vesp']['versao'] + 1 if pdf_vesp else estado_atual['vesp']['versao']
-                        v_global = max(v_mat_nova, v_vesp_nova)
-                        nome_novo = f"V{v_global:02d}_{data_base_str}_a"
-                        
-                        if len(dados_antigos) > 1:
-                            nome_fechado = f"{nome_aba_ativa}_{data_fim_str}"
-                            for idx, linha in enumerate(dados_antigos[1:]):
-                                while len(linha) < 12: linha.append("")
-                                t = str(linha[0]).upper()
-                                if t == "MATUTINO" and pdf_mat: linha[10] = fim_calc.strftime("%d/%m/%Y")
-                                if t == "VESPERTINO" and pdf_vesp: linha[10] = fim_calc.strftime("%d/%m/%Y")
-                                dados_antigos[idx+1] = linha
-                                
-                            aba_bruta.update_title(nome_fechado)
-                            aba_bruta.update(range_name='A1', values=dados_antigos)
-                            aba_bruta.hide() # ESCONDE HISTÓRICO
-                            
-                            aba_bruta = plan.add_worksheet(title=nome_novo, rows=3000, cols=12)
-                            aba_bruta.hide() # ESCONDE ABA NOVA
-                    else:
-                        v_mat_nova = estado_atual['mat']['versao']; v_vesp_nova = estado_atual['vesp']['versao']
-                        nome_novo = nome_aba_ativa
-
-                dados_preservados = []
-                if len(dados_antigos) > 1:
-                    for linha in dados_antigos[1:]: 
-                        while len(linha) < 12: linha.append("")
-                        t = str(linha[0]).upper()
-                        if t == "MATUTINO" and not pdf_mat: dados_preservados.append(linha)
-                        if t == "VESPERTINO" and not pdf_vesp: dados_preservados.append(linha)
-
-                dados_novos_mat = extrair_dados_pdf(pdf_mat, "MATUTINO", str_data_mat, v_mat_nova) if pdf_mat else []
-                dados_novos_vesp = extrair_dados_pdf(pdf_vesp, "VESPERTINO", str_data_vesp, v_vesp_nova) if pdf_vesp else []
-
-                cabecalho = ["Turno", "Professor", "Dia", "Horário", "Turma", "Disciplina", "Sala", "Pavilhao", "Duracao", "Inicio_Vigencia", "Fim", "Versao_Turno"]
-                dados_finais = [cabecalho] + dados_preservados + dados_novos_mat + dados_novos_vesp
+    with col2:
+        st.subheader("⏳ Contagem Regressiva - Termos e Avisos")
+        if not df_avisos_futuros.empty:
+            for index, row in df_avisos_futuros.iterrows():
+                data_av = datetime.strptime(row['data_aviso'], '%Y-%m-%d').date()
+                dias_faltando = (data_av - hoje).days
                 
-                aba_bruta.clear()
-                aba_bruta.update(range_name='A1', values=dados_finais)
-                
-                st.cache_data.clear()
-                if resetar: st.success(f"✅ VIRADA DE ANO! Base limpa e aba oculta {nome_novo} criada."); st.balloons()
-                elif is_valido: st.success(f"✅ SUCESSO! Antiga encerrada ({nome_fechado}). Nova criada oculta ({nome_novo})."); st.balloons()
-                else: st.info("🧪 TESTE CONCLUÍDO! Substituição feita na aba oculta sem histórico.")
-            except Exception as e: st.error(f"Erro Crítico: {e}")
+                texto_dias = "PRAZO HOJE!" if dias_faltando == 0 else f"Vence em {dias_faltando} dias"
+                st.error(f"**{texto_dias}** - {row['titulo']}")
+                st.caption(f"Prazo: {data_av.strftime('%d/%m/%Y')}")
+        else:
+            st.success("Tudo em dia! Nenhum aviso pendente.")
